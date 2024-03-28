@@ -13,6 +13,7 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"gopkg.in/yaml.v3"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -157,7 +158,7 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 					if err != nil {
 						logger.Logrus().WithError(err).Error("unregister instance failed ip", i.Ip, "port", i.Port)
 					} else {
-						logger.Logrus().WithError(err).Error("unregister instance ip", i.Ip, "port", i.Port, "result", flag)
+						logger.Logrus().Debugln("unregister instance ip", i.Ip, "port", i.Port, "result", flag)
 					}
 				}
 			}
@@ -175,11 +176,16 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 }
 
 type ConfigClient struct {
-	group string
+	mu      sync.Mutex
+	group   string
+	watched map[string]vo.ConfigParam
 }
+
 type NamingClient struct {
+	mu         sync.Mutex
 	group      string
 	registered map[string]vo.RegisterInstanceParam
+	watched    map[string]*vo.SubscribeParam
 }
 
 type ConfigFileSetting struct {
@@ -187,6 +193,11 @@ type ConfigFileSetting struct {
 	Type   ConfigType
 	Watch  bool
 	Value  any
+}
+
+type ServiceInstance struct {
+	Instance           *model.Instance
+	InstanceIdentifier string
 }
 
 func deserializeConfig(content string, configType ConfigType, value any) error {
@@ -209,7 +220,7 @@ func GetConfigClient(group string) (*ConfigClient, error) {
 	if ok {
 		return v, nil
 	}
-	v = &ConfigClient{group: group}
+	v = &ConfigClient{group: group, watched: make(map[string]vo.ConfigParam)}
 	nm.cc[group] = v
 	return v, nil
 }
@@ -224,7 +235,7 @@ func GetNamingClient(group string) (*NamingClient, error) {
 	if ok {
 		return v, nil
 	}
-	v = &NamingClient{group: group}
+	v = &NamingClient{group: group, registered: make(map[string]vo.RegisterInstanceParam), watched: make(map[string]*vo.SubscribeParam)}
 	nm.nc[group] = v
 	return v, nil
 }
@@ -244,10 +255,27 @@ func (c *ConfigClient) GetConfig(dataId string, configType ConfigType, value any
 }
 
 // WatchConfig 监听文件变化
-func (c *ConfigClient) WatchConfig(dataId string, watch func(content string)) error {
-	return configInstance.ListenConfig(vo.ConfigParam{DataId: dataId, Group: c.group, OnChange: func(namespace, group, dataId, data string) {
+func (c *ConfigClient) WatchConfig(dataId string, watch func(content string)) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	param := vo.ConfigParam{DataId: dataId, Group: c.group}
+	watchId := md5.HexMd5(json.ToJson(param) + strconv.FormatInt(time.Now().UnixNano(), 10))
+	param.OnChange = func(namespace, group, dataId, data string) {
 		watch(data)
-	}})
+	}
+	c.watched[watchId] = param
+	return watchId, configInstance.ListenConfig(param)
+}
+
+// UnwatchConfig 取消监听文件变化
+func (c *ConfigClient) UnwatchConfig(watchId string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	v, ok := c.watched[watchId]
+	if ok {
+		return configInstance.CancelListenConfig(v)
+	}
+	return errors.New("bad watchId")
 }
 
 // LoadAndWatchConfig 获取并监听配置变化
@@ -261,7 +289,7 @@ func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) erro
 			return err
 		}
 		if f.Watch {
-			err = c.WatchConfig(f.DataId, func(content string) {
+			_, err = c.WatchConfig(f.DataId, func(content string) {
 				err = deserializeConfig(content, f.Type, f.Value)
 				if err != nil {
 					logger.Logrus().WithError(err).Error("cant deserialize content:", content)
@@ -328,8 +356,8 @@ func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
 	})
 }
 
-// GetAllService 获取指定所有服务的注册信息 包括 healthy=false,enable=false,weight<=0
-func (n *NamingClient) GetAllService(pageNo, pageSize uint, serviceName ...string) (model.ServiceList, error) {
+// GetAllServiceInfo 获取指定所有服务的注册信息
+func (n *NamingClient) GetAllServiceInfo(pageNo, pageSize uint) (model.ServiceList, error) {
 	return namingInstance.GetAllServicesInfo(vo.GetAllServiceInfoParam{
 		NameSpace: namespace,
 		GroupName: n.group,
@@ -338,9 +366,40 @@ func (n *NamingClient) GetAllService(pageNo, pageSize uint, serviceName ...strin
 	})
 }
 
-// GetAllInstance 获取指定服务的所有实例
+// GetAllInstance 获取指定服务的所有实例(不论当前是否可用)
 func (n *NamingClient) GetAllInstance(serviceName string) ([]model.Instance, error) {
 	return namingInstance.SelectAllInstances(vo.SelectAllInstancesParam{ServiceName: serviceName, GroupName: n.group})
+}
+
+// ChooseOneHealthyRandom 选择一个可用的实例
+func (n *NamingClient) ChooseOneHealthyRandom(serviceName string) (*ServiceInstance, error) {
+	instance, err := namingInstance.SelectOneHealthyInstance(vo.SelectOneHealthInstanceParam{ServiceName: serviceName, GroupName: n.group})
+	if err != nil {
+		return nil, err
+	}
+	return &ServiceInstance{InstanceIdentifier: md5.HexMd5(json.ToJson(instance)), Instance: instance}, nil
+}
+
+// WatchNaming 监控服务的实例变化
+func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []model.Instance, err error)) (string, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	param := &vo.SubscribeParam{ServiceName: serviceName, GroupName: n.group}
+	watchId := md5.HexMd5(json.ToJson(param) + strconv.FormatInt(time.Now().UnixNano(), 10))
+	param.SubscribeCallback = watch
+	n.watched[watchId] = param
+	return watchId, namingInstance.Subscribe(param)
+}
+
+// UnwatchNaming 取消监控服务实例变化
+func (n *NamingClient) UnwatchNaming(watchId string) error {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	v, ok := n.watched[watchId]
+	if !ok {
+		return errors.New("bad watchId")
+	}
+	return namingInstance.Unsubscribe(v)
 }
 
 func RawConfigInstance() config_client.IConfigClient {
