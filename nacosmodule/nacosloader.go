@@ -107,8 +107,6 @@ func (n *NacosModule) Register() (interface{}, error) {
 		namespace = n.ClientConfig.Namespace
 	}
 	clientConfig := &constant.ClientConfig{
-		TimeoutMs:           uint64(n.ClientConfig.TimeoutMs),
-		BeatInterval:        0,
 		NamespaceId:         namespace,
 		CacheDir:            n.ClientConfig.CacheDir,
 		Username:            n.ClientConfig.Username,
@@ -116,6 +114,10 @@ func (n *NacosModule) Register() (interface{}, error) {
 		LogDir:              n.ClientConfig.LogDir,
 		LogLevel:            string(n.ClientConfig.LogLevel),
 		NotLoadCacheAtStart: true,
+	}
+
+	if n.ClientConfig.TimeoutMs > 0 {
+		clientConfig.TimeoutMs = uint64(n.ClientConfig.TimeoutMs)
 	}
 
 	if !n.DisableConfig {
@@ -215,7 +217,7 @@ func GetConfigClient(group string) (*ConfigClient, error) {
 		return nil, errors.New("disabled config client")
 	}
 	nm.ccl.Lock()
-	defer nm.ccl.Lock()
+	defer nm.ccl.Unlock()
 	v, ok := nm.cc[group]
 	if ok {
 		return v, nil
