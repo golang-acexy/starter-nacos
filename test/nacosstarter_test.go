@@ -14,6 +14,8 @@ import (
 
 var m declaration.Module
 
+var initConfig = new([]JsonConfig)
+
 func init() {
 	m = declaration.Module{
 		ModuleLoaders: []declaration.ModuleLoader{
@@ -27,6 +29,12 @@ func init() {
 					Password:  "nacos",
 					LogLevel:  nacosmodule.LogLeveDebug,
 					LogDir:    "./",
+				},
+				InitConfig: &nacosmodule.InitConfig{
+					GroupName: "WALLET",
+					ConfigSetting: []*nacosmodule.ConfigFileSetting{
+						{DataId: "gateway-flow-rule.json", Type: nacosmodule.ConfigTypeJson, Watch: true, Value: initConfig},
+					},
 				},
 			},
 		},
@@ -51,6 +59,16 @@ type JsonConfig struct {
 	Grade           int    `json:"grade"`
 	Strategy        int    `json:"strategy"`
 	ClusterMode     bool   `json:"clusterMode"`
+}
+
+func TestInitConfig(t *testing.T) {
+	go func() {
+		for {
+			fmt.Printf("%+v\n", initConfig)
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	select {}
 }
 
 func TestConfig(t *testing.T) {

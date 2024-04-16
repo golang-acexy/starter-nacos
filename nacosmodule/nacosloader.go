@@ -65,6 +65,11 @@ type NacosClientConfig struct {
 	Password  string
 }
 
+type InitConfig struct {
+	ConfigSetting []*ConfigFileSetting
+	GroupName     string
+}
+
 type NacosModule struct {
 	GrpcModuleConfig *declaration.ModuleConfig
 
@@ -73,6 +78,9 @@ type NacosModule struct {
 
 	ServerConfig *NacosServerConfig
 	ClientConfig *NacosClientConfig
+
+	// 需要立即初始化的配置
+	InitConfig *InitConfig
 }
 
 func (n *NacosModule) ModuleConfig() *declaration.ModuleConfig {
@@ -88,12 +96,16 @@ func (n *NacosModule) ModuleConfig() *declaration.ModuleConfig {
 }
 
 func (n *NacosModule) Register() (interface{}, error) {
+
 	if n.DisableDiscovery && n.DisableConfig {
 		return nil, errors.New("disabled config and discovery")
 	}
 	if n.ServerConfig == nil || n.ClientConfig == nil || len(n.ServerConfig.Services) == 0 {
 		return nil, errors.New("bad config")
 	}
+
+	nm = &nacosManager{cc: make(map[string]*ConfigClient), nc: make(map[string]*NamingClient)}
+
 	nacosSrvNodes := make([]constant.ServerConfig, len(n.ServerConfig.Services))
 	for i, v := range n.ServerConfig.Services {
 		nacosSrvNodes[i] = constant.ServerConfig{
@@ -101,11 +113,13 @@ func (n *NacosModule) Register() (interface{}, error) {
 			Port:   uint64(v.Port),
 		}
 	}
+
 	if n.ClientConfig.Namespace == "public" {
 		namespace = ""
 	} else {
 		namespace = n.ClientConfig.Namespace
 	}
+
 	clientConfig := &constant.ClientConfig{
 		NamespaceId:         namespace,
 		CacheDir:            n.ClientConfig.CacheDir,
@@ -129,7 +143,16 @@ func (n *NacosModule) Register() (interface{}, error) {
 			return nil, err
 		}
 		configInstance = cc
+
+		if n.InitConfig != nil && len(n.InitConfig.ConfigSetting) > 0 && n.InitConfig.GroupName != "" {
+			client, _ := GetConfigClient(n.InitConfig.GroupName)
+			err = client.LoadAndWatchConfig(n.InitConfig.ConfigSetting)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
+
 	if !n.DisableDiscovery {
 		nc, err := clients.NewNamingClient(
 			vo.NacosClientParam{
@@ -142,7 +165,7 @@ func (n *NacosModule) Register() (interface{}, error) {
 		}
 		namingInstance = nc
 	}
-	nm = &nacosManager{cc: make(map[string]*ConfigClient), nc: make(map[string]*NamingClient)}
+
 	return nil, nil
 }
 
@@ -150,7 +173,6 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 	if configInstance != nil {
 		configInstance.CloseClient()
 	}
-
 	if namingInstance != nil {
 		done := make(chan interface{})
 		go func() {
