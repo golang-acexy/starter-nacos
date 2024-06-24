@@ -21,8 +21,10 @@ import (
 var configInstance config_client.IConfigClient
 var namingInstance naming_client.INamingClient
 
-type LogLevel string
 type ConfigType string
+
+// ConfigChangeListener 文件变动监听回调
+type ConfigChangeListener func(namespace, group, dataId, data string)
 
 const (
 	ConfigTypeJson ConfigType = "json"
@@ -168,7 +170,7 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 type configClient struct {
 	mu      sync.Mutex
 	group   string
-	watched map[string]vo.ConfigParam
+	watched map[string]*vo.ConfigParam
 }
 
 type namingClient struct {
@@ -210,7 +212,7 @@ func GetConfigClient(group string) (*configClient, error) {
 	if ok {
 		return v, nil
 	}
-	v = &configClient{group: group, watched: make(map[string]vo.ConfigParam)}
+	v = &configClient{group: group, watched: make(map[string]*vo.ConfigParam)}
 	nm.cc[group] = v
 	return v, nil
 }
@@ -245,15 +247,15 @@ func (c *configClient) GetConfig(dataId string, configType ConfigType, value any
 }
 
 // WatchConfig 监听文件变化
-func (c *configClient) WatchConfig(dataId string, watch func(content string)) (string, error) {
+func (c *configClient) WatchConfig(dataId string, watch ConfigChangeListener) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	param := vo.ConfigParam{DataId: dataId, Group: c.group}
 	watchId := md5.HexMd5(json.ToJson(param) + strconv.FormatInt(time.Now().UnixNano(), 10))
 	param.OnChange = func(namespace, group, dataId, data string) {
-		watch(data)
+		watch(namespace, group, dataId, data)
 	}
-	c.watched[watchId] = param
+	c.watched[watchId] = &param
 	return watchId, configInstance.ListenConfig(param)
 }
 
@@ -263,7 +265,7 @@ func (c *configClient) UnwatchConfig(watchId string) error {
 	defer c.mu.Unlock()
 	v, ok := c.watched[watchId]
 	if ok {
-		return configInstance.CancelListenConfig(v)
+		return configInstance.CancelListenConfig(*v)
 	}
 	return errors.New("bad watchId")
 }
@@ -279,10 +281,10 @@ func (c *configClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) erro
 			return err
 		}
 		if f.Watch {
-			_, err = c.WatchConfig(f.DataId, func(content string) {
-				err = deserializeConfig(content, f.Type, f.Value)
+			_, err = c.WatchConfig(f.DataId, func(namespace, group, dataId, data string) {
+				err = deserializeConfig(data, f.Type, f.Value)
 				if err != nil {
-					logger.Logrus().WithError(err).Error("cant deserialize content:", content)
+					logger.Logrus().WithError(err).Error("cant deserialize content:", data)
 				}
 			})
 			if err != nil {
