@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"github.com/acexy/golang-toolkit/logger"
+	"github.com/acexy/golang-toolkit/sys"
 	"github.com/acexy/golang-toolkit/util/json"
 	"github.com/golang-acexy/starter-nacos/nacosmodule"
 	"github.com/golang-acexy/starter-parent/parentmodule/declaration"
@@ -62,43 +63,44 @@ type JsonConfig struct {
 }
 
 func TestInitConfig(t *testing.T) {
-	go func() {
-		for {
-			fmt.Printf("%+v\n", initConfig)
-			time.Sleep(1 * time.Second)
-		}
-	}()
-	select {}
+	fmt.Printf("inited config %+v\n", initConfig)
+	time.Sleep(1 * time.Second)
+	sys.ShutdownHolding()
 }
 
 func TestConfig(t *testing.T) {
 	cc, _ := nacosmodule.GetConfigClient("WALLET")
-	fmt.Println(cc.GetConfigRawContent("gateway.yml"))
+
+	content, err := cc.GetConfigRawContent("gateway.yml")
+	fmt.Println("raw gateway.yml", content, err)
+
 	y := YamlConfig{}
-	cc.GetConfig("gateway.yml", nacosmodule.ConfigTypeYaml, &y)
-	fmt.Printf("%+v\n", y)
+	_ = cc.GetConfig("gateway.yml", nacosmodule.ConfigTypeYaml, &y)
+	fmt.Printf("gateway.yml %+v\n", y)
 
 	var j []JsonConfig
-	cc.GetConfig("gateway-flow-rule.json", nacosmodule.ConfigTypeJson, &j)
-	fmt.Printf("%+v\n", j)
+	_ = cc.GetConfig("gateway-flow-rule.json", nacosmodule.ConfigTypeJson, &j)
+	fmt.Printf("gateway-flow-rule.json %+v\n", j)
 	m.UnloadByConfig()
 }
 
 func TestWatch(t *testing.T) {
 	cc, _ := nacosmodule.GetConfigClient("WALLET")
-	cc.WatchConfig("gateway-flow-rule.json", func(content string) {
-		fmt.Println(content)
+	_, _ = cc.WatchConfig("gateway-degrade-rule.json", func(namespace, group, dataId, data string) {
+		fmt.Println(namespace, group, dataId, data)
 	})
-	time.Sleep(time.Minute * 2)
+	sys.ShutdownHolding()
 }
 
 func TestLoadAndWatch(t *testing.T) {
 	cc, _ := nacosmodule.GetConfigClient("WALLET")
 	var j []JsonConfig
-	cc.LoadAndWatchConfig([]*nacosmodule.ConfigFileSetting{
-		{DataId: "gateway-flow-rule.json", Type: nacosmodule.ConfigTypeJson, Watch: true, Value: &j},
-	})
 
+	// 加载指定的配置并自动监听
+	_ = cc.LoadAndWatchConfig([]*nacosmodule.ConfigFileSetting{
+		{DataId: "gateway-degrade-rule.json", Type: nacosmodule.ConfigTypeJson, Watch: true, Value: &j},
+	})
+	// loop 通过修改配置查看是否自动变化
 	for i := 0; i <= 10; i++ {
 		fmt.Printf("%+v\n", j)
 		time.Sleep(time.Second * 5)

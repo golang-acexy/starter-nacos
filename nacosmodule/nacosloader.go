@@ -24,6 +24,9 @@ var namingInstance naming_client.INamingClient
 type LogLevel string
 type ConfigType string
 
+// ConfigChangeListener 文件变动监听回调
+type ConfigChangeListener func(namespace, group, dataId, data string)
+
 const (
 	LogLeveDebug LogLevel = "debug"
 	LogLeveInfo  LogLevel = "info"
@@ -202,7 +205,7 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 type ConfigClient struct {
 	mu      sync.Mutex
 	group   string
-	watched map[string]vo.ConfigParam
+	watched map[string]*vo.ConfigParam
 }
 
 type NamingClient struct {
@@ -244,7 +247,7 @@ func GetConfigClient(group string) (*ConfigClient, error) {
 	if ok {
 		return v, nil
 	}
-	v = &ConfigClient{group: group, watched: make(map[string]vo.ConfigParam)}
+	v = &ConfigClient{group: group, watched: make(map[string]*vo.ConfigParam)}
 	nm.cc[group] = v
 	return v, nil
 }
@@ -279,15 +282,15 @@ func (c *ConfigClient) GetConfig(dataId string, configType ConfigType, value any
 }
 
 // WatchConfig 监听文件变化
-func (c *ConfigClient) WatchConfig(dataId string, watch func(content string)) (string, error) {
+func (c *ConfigClient) WatchConfig(dataId string, watch ConfigChangeListener) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	param := vo.ConfigParam{DataId: dataId, Group: c.group}
 	watchId := md5.HexMd5(json.ToJson(param) + strconv.FormatInt(time.Now().UnixNano(), 10))
 	param.OnChange = func(namespace, group, dataId, data string) {
-		watch(data)
+		watch(namespace, group, dataId, data)
 	}
-	c.watched[watchId] = param
+	c.watched[watchId] = &param
 	return watchId, configInstance.ListenConfig(param)
 }
 
@@ -297,7 +300,7 @@ func (c *ConfigClient) UnwatchConfig(watchId string) error {
 	defer c.mu.Unlock()
 	v, ok := c.watched[watchId]
 	if ok {
-		return configInstance.CancelListenConfig(v)
+		return configInstance.CancelListenConfig(*v)
 	}
 	return errors.New("bad watchId")
 }
@@ -313,10 +316,10 @@ func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) erro
 			return err
 		}
 		if f.Watch {
-			_, err = c.WatchConfig(f.DataId, func(content string) {
-				err = deserializeConfig(content, f.Type, f.Value)
+			_, err = c.WatchConfig(f.DataId, func(namespace, group, dataId, data string) {
+				err = deserializeConfig(data, f.Type, f.Value)
 				if err != nil {
-					logger.Logrus().WithError(err).Error("cant deserialize content:", content)
+					logger.Logrus().WithError(err).Error("cant deserialize content:", data)
 				}
 			})
 			if err != nil {
