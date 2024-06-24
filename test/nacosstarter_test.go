@@ -3,9 +3,11 @@ package test
 import (
 	"fmt"
 	"github.com/acexy/golang-toolkit/logger"
+	"github.com/acexy/golang-toolkit/sys"
 	"github.com/acexy/golang-toolkit/util/json"
 	"github.com/golang-acexy/starter-nacos/nacosmodule"
 	"github.com/golang-acexy/starter-parent/parentmodule/declaration"
+	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"testing"
@@ -20,17 +22,21 @@ func init() {
 	m = declaration.Module{
 		ModuleLoaders: []declaration.ModuleLoader{
 			&nacosmodule.NacosModule{
-				ServerConfig: &nacosmodule.NacosServerConfig{Services: []nacosmodule.NacosServer{
-					{Addr: "localhost", Port: 8848},
+				ServerConfig: &nacosmodule.NacosServerConfig{Services: []constant.ServerConfig{
+					{IpAddr: "localhost", Port: 8848},
 				}},
 				ClientConfig: &nacosmodule.NacosClientConfig{
-					Namespace: "wallet-dev",
-					Username:  "nacos",
-					Password:  "nacos",
-					LogLevel:  nacosmodule.LogLeveDebug,
-					LogDir:    "./",
+					ClientConfig: &constant.ClientConfig{
+						NamespaceId:         "wallet-dev",
+						Username:            "nacos",
+						Password:            "nacos",
+						LogLevel:            "error",
+						LogDir:              "./",
+						CacheDir:            "./",
+						NotLoadCacheAtStart: true,
+					},
 				},
-				InitConfig: &nacosmodule.InitConfig{
+				InitConfigSettings: &nacosmodule.InitConfigSettings{
 					GroupName: "WALLET",
 					ConfigSetting: []*nacosmodule.ConfigFileSetting{
 						{DataId: "gateway-flow-rule.json", Type: nacosmodule.ConfigTypeJson, Watch: true, Value: initConfig},
@@ -68,7 +74,7 @@ func TestInitConfig(t *testing.T) {
 			time.Sleep(1 * time.Second)
 		}
 	}()
-	select {}
+	sys.ShutdownHolding()
 }
 
 func TestConfig(t *testing.T) {
@@ -76,11 +82,12 @@ func TestConfig(t *testing.T) {
 	fmt.Println(cc.GetConfigRawContent("gateway.yml"))
 	y := YamlConfig{}
 	cc.GetConfig("gateway.yml", nacosmodule.ConfigTypeYaml, &y)
-	fmt.Printf("%+v\n", y)
+	fmt.Printf("gateway.yml %+v\n", y)
 
 	var j []JsonConfig
 	cc.GetConfig("gateway-flow-rule.json", nacosmodule.ConfigTypeJson, &j)
-	fmt.Printf("%+v\n", j)
+	fmt.Printf("gateway-flow-rule.json %+v\n", j)
+	time.Sleep(time.Second * 5)
 	m.UnloadByConfig()
 }
 
@@ -89,7 +96,7 @@ func TestWatch(t *testing.T) {
 	cc.WatchConfig("gateway-flow-rule.json", func(content string) {
 		fmt.Println(content)
 	})
-	time.Sleep(time.Minute * 2)
+	sys.ShutdownHolding()
 }
 
 func TestLoadAndWatch(t *testing.T) {
@@ -132,7 +139,7 @@ func TestGetService(t *testing.T) {
 	}
 	fmt.Println(json.ToJsonFormat(service))
 
-	serviceList, err := nc.GetAllServiceInfo(1, 40)
+	serviceList, err := nc.GetAllServiceInfo("wallet-dev", 1, 40)
 	if err != nil {
 		println(err)
 	}
