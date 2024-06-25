@@ -148,9 +148,9 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 				for id, i := range v.registered {
 					flag, err := v.Unregister(id)
 					if err != nil {
-						logger.Logrus().WithError(err).Error("unregister instance failed ip", i.Ip, "port", i.Port)
+						logger.Logrus().WithError(err).Error("unregister instance failed ip:", i.Ip, "port:", i.Port)
 					} else {
-						logger.Logrus().Debugln("unregister instance ip", i.Ip, "port", i.Port, "result", flag)
+						logger.Logrus().Debugln("unregister instance ip:", i.Ip, "port:", i.Port, "result:", flag)
 					}
 				}
 			}

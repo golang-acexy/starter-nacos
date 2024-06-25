@@ -70,7 +70,6 @@ type JsonConfig struct {
 func TestInitConfig(t *testing.T) {
 	fmt.Printf("inited config %+v\n", initConfig)
 	time.Sleep(1 * time.Second)
-	sys.ShutdownHolding()
 }
 
 func TestConfig(t *testing.T) {
