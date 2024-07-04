@@ -5,8 +5,8 @@ import (
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/acexy/golang-toolkit/sys"
 	"github.com/acexy/golang-toolkit/util/json"
-	"github.com/golang-acexy/starter-nacos/nacosmodule"
-	"github.com/golang-acexy/starter-parent/parentmodule/declaration"
+	"github.com/golang-acexy/starter-nacos/nacosstarter"
+	"github.com/golang-acexy/starter-parent/parent"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
@@ -14,38 +14,36 @@ import (
 	"time"
 )
 
-var m declaration.Module
+var loader *parent.StarterLoader
 
 var initConfig = new([]JsonConfig)
 
 func init() {
-	m = declaration.Module{
-		ModuleLoaders: []declaration.ModuleLoader{
-			&nacosmodule.NacosModule{
-				ServerConfig: &nacosmodule.NacosServerConfig{Services: []constant.ServerConfig{
-					{IpAddr: "localhost", Port: 8848},
-				}},
-				ClientConfig: &nacosmodule.NacosClientConfig{
-					ClientConfig: &constant.ClientConfig{
-						NamespaceId:         "wallet-dev",
-						Username:            "nacos",
-						Password:            "nacos",
-						LogLevel:            "error",
-						LogDir:              "./",
-						CacheDir:            "./",
-						NotLoadCacheAtStart: true,
-					},
+	loader = parent.NewStarterLoader([]parent.Starter{
+		&nacosstarter.NacosStarter{
+			ServerConfig: &nacosstarter.NacosServerConfig{Services: []constant.ServerConfig{
+				{IpAddr: "localhost", Port: 8848},
+			}},
+			ClientConfig: &nacosstarter.NacosClientConfig{
+				ClientConfig: &constant.ClientConfig{
+					NamespaceId:         "wallet-dev",
+					Username:            "nacos",
+					Password:            "nacos",
+					LogLevel:            "error",
+					LogDir:              "./",
+					CacheDir:            "./",
+					NotLoadCacheAtStart: true,
 				},
-				InitConfigSettings: &nacosmodule.InitConfigSettings{
-					GroupName: "WALLET",
-					ConfigSetting: []*nacosmodule.ConfigFileSetting{
-						{DataId: "gateway-flow-rule.json", Type: nacosmodule.ConfigTypeJson, Watch: true, Value: initConfig},
-					},
+			},
+			InitConfigSettings: &nacosstarter.InitConfigSettings{
+				GroupName: "WALLET",
+				ConfigSetting: []*nacosstarter.ConfigFileSetting{
+					{DataId: "gateway-flow-rule.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initConfig},
 				},
 			},
 		},
-	}
-	err := m.Load()
+	})
+	err := loader.Start()
 	if err != nil {
 		println(err)
 		return
@@ -73,23 +71,23 @@ func TestInitConfig(t *testing.T) {
 }
 
 func TestConfig(t *testing.T) {
-	cc, _ := nacosmodule.GetConfigClient("WALLET")
+	cc, _ := nacosstarter.GetConfigClient("WALLET")
 
 	content, err := cc.GetConfigRawContent("gateway.yml")
 	fmt.Println("raw gateway.yml", content, err)
 
 	y := YamlConfig{}
-	_ = cc.GetConfig("gateway.yml", nacosmodule.ConfigTypeYaml, &y)
+	_ = cc.GetConfig("gateway.yml", nacosstarter.ConfigTypeYaml, &y)
 	fmt.Printf("gateway.yml %+v\n", y)
 
 	var j []JsonConfig
-	_ = cc.GetConfig("gateway-flow-rule.json", nacosmodule.ConfigTypeJson, &j)
+	_ = cc.GetConfig("gateway-flow-rule.json", nacosstarter.ConfigTypeJson, &j)
 	fmt.Printf("gateway-flow-rule.json %+v\n", j)
-	m.UnloadByConfig()
+	loader.StopBySetting()
 }
 
 func TestWatch(t *testing.T) {
-	cc, _ := nacosmodule.GetConfigClient("WALLET")
+	cc, _ := nacosstarter.GetConfigClient("WALLET")
 	_, _ = cc.WatchConfig("gateway-degrade-rule.json", func(namespace, group, dataId, data string) {
 		fmt.Println(namespace, group, dataId, data)
 	})
@@ -97,12 +95,12 @@ func TestWatch(t *testing.T) {
 }
 
 func TestLoadAndWatch(t *testing.T) {
-	cc, _ := nacosmodule.GetConfigClient("WALLET")
+	cc, _ := nacosstarter.GetConfigClient("WALLET")
 	var j []JsonConfig
 
 	// 加载指定的配置并自动监听
-	_ = cc.LoadAndWatchConfig([]*nacosmodule.ConfigFileSetting{
-		{DataId: "gateway-degrade-rule.json", Type: nacosmodule.ConfigTypeJson, Watch: true, Value: &j},
+	_ = cc.LoadAndWatchConfig([]*nacosstarter.ConfigFileSetting{
+		{DataId: "gateway-degrade-rule.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: &j},
 	})
 	// loop 通过修改配置查看是否自动变化
 	for i := 0; i <= 10; i++ {
@@ -112,7 +110,7 @@ func TestLoadAndWatch(t *testing.T) {
 }
 
 func TestRawNC(t *testing.T) {
-	nacosmodule.RawNamingInstance().DeregisterInstance(vo.DeregisterInstanceParam{
+	nacosstarter.RawNamingInstance().DeregisterInstance(vo.DeregisterInstanceParam{
 		Ip:          "1.1.1.1",
 		ServiceName: "go",
 		Port:        1,
@@ -121,17 +119,17 @@ func TestRawNC(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
-	nc, _ := nacosmodule.GetNamingClient("WALLET")
+	nc, _ := nacosstarter.GetNamingClient("WALLET")
 	id, _ := nc.Register("1.1.1.1", "go", 1, 1, nil)
 	if id == "" {
 		fmt.Println("register failed")
 		return
 	}
-	m.UnloadByConfig()
+	loader.StopBySetting()
 }
 
 func TestGetService(t *testing.T) {
-	nc, _ := nacosmodule.GetNamingClient("WALLET")
+	nc, _ := nacosstarter.GetNamingClient("WALLET")
 	service, err := nc.GetService("account-server")
 	if err != nil {
 		println(err)
@@ -143,11 +141,11 @@ func TestGetService(t *testing.T) {
 		println(err)
 	}
 	fmt.Println(json.ToJsonFormat(serviceList))
-	m.UnloadByConfig()
+	loader.StopBySetting()
 }
 
 func TestChooseOneHealthyRandom(t *testing.T) {
-	nc, _ := nacosmodule.GetNamingClient("WALLET")
+	nc, _ := nacosstarter.GetNamingClient("WALLET")
 	for i := 1; i <= 30; i++ {
 		service, _ := nc.ChooseOneHealthyRandom("account-server")
 		fmt.Println(json.ToJsonFormat(service))
@@ -156,7 +154,7 @@ func TestChooseOneHealthyRandom(t *testing.T) {
 }
 
 func TestWatchNaming(t *testing.T) {
-	nc, _ := nacosmodule.GetNamingClient("WALLET")
+	nc, _ := nacosstarter.GetNamingClient("WALLET")
 	watchId, _ := nc.WatchNaming("account-server", func(instance []model.Instance, err error) {
 		if err != nil {
 			logger.Logrus().WithError(err).Errorln("watch naming error")

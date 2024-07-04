@@ -1,11 +1,11 @@
-package nacosmodule
+package nacosstarter
 
 import (
 	"errors"
 	"github.com/acexy/golang-toolkit/crypto/hashing/md5"
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/acexy/golang-toolkit/util/json"
-	"github.com/golang-acexy/starter-parent/parentmodule/declaration"
+	"github.com/golang-acexy/starter-parent/parent"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/naming_client"
@@ -53,10 +53,10 @@ type InitConfigSettings struct {
 	GroupName     string
 }
 
-type NacosModule struct {
+type NacosStarter struct {
 
 	// nacos组件模块设置
-	GrpcModuleConfig *declaration.ModuleConfig
+	GrpcModuleConfig *parent.Setting
 
 	ServerConfig *NacosServerConfig
 	ClientConfig *NacosClientConfig
@@ -71,19 +71,14 @@ type NacosModule struct {
 	InitConfigSettings *InitConfigSettings
 }
 
-func (n *NacosModule) ModuleConfig() *declaration.ModuleConfig {
+func (n *NacosStarter) Setting() *parent.Setting {
 	if n.GrpcModuleConfig != nil {
 		return n.GrpcModuleConfig
 	}
-	return &declaration.ModuleConfig{
-		ModuleName:               "Nacos",
-		UnregisterPriority:       1,
-		UnregisterAllowAsync:     true,
-		UnregisterMaxWaitSeconds: 30,
-	}
+	return parent.NewSetting("Nacos-Starter", 1, true, time.Second*30, nil)
 }
 
-func (n *NacosModule) Register() (interface{}, error) {
+func (n *NacosStarter) Start() (interface{}, error) {
 
 	if n.DisableDiscovery && n.DisableConfig {
 		return nil, errors.New("config and discover modules are disabled")
@@ -137,7 +132,7 @@ func (n *NacosModule) Register() (interface{}, error) {
 	return nil, nil
 }
 
-func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
+func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool, err error) {
 	if configInstance != nil {
 		configInstance.CloseClient()
 	}
@@ -150,7 +145,7 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 					if err != nil {
 						logger.Logrus().WithError(err).Error("unregister instance failed ip:", i.Ip, "port:", i.Port)
 					} else {
-						logger.Logrus().Debugln("unregister instance ip:", i.Ip, "port:", i.Port, "result:", flag)
+						logger.Logrus().Traceln("unregister instance ip:", i.Ip, "port:", i.Port, "result:", flag)
 					}
 				}
 			}
@@ -159,12 +154,12 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 		}()
 		select {
 		case <-done:
-			return true, nil
-		case <-time.After(time.Second * time.Duration(maxWaitSeconds)):
-			return false, nil
+			return true, true, nil
+		case <-time.After(maxWaitTime):
+			return false, true, nil
 		}
 	}
-	return true, nil
+	return true, true, nil
 }
 
 type configClient struct {
