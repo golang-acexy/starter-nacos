@@ -75,7 +75,7 @@ func (n *NacosStarter) Setting() *parent.Setting {
 	if n.GrpcModuleConfig != nil {
 		return n.GrpcModuleConfig
 	}
-	return parent.NewSetting("Nacos-Starter", 1, true, time.Second*30, nil)
+	return parent.NewSetting("Nacos-Starter", 1, false, time.Second*30, nil)
 }
 
 func (n *NacosStarter) Start() (interface{}, error) {
