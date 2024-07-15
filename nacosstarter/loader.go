@@ -1,11 +1,11 @@
-package nacosmodule
+package nacosstarter
 
 import (
 	"errors"
 	"github.com/acexy/golang-toolkit/crypto/hashing/md5"
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/acexy/golang-toolkit/util/json"
-	"github.com/golang-acexy/starter-parent/parentmodule/declaration"
+	"github.com/golang-acexy/starter-parent/parent"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/config_client"
 	"github.com/nacos-group/nacos-sdk-go/v2/clients/naming_client"
@@ -21,135 +21,96 @@ import (
 var configInstance config_client.IConfigClient
 var namingInstance naming_client.INamingClient
 
-type LogLevel string
 type ConfigType string
 
 // ConfigChangeListener 文件变动监听回调
 type ConfigChangeListener func(namespace, group, dataId, data string)
 
 const (
-	LogLeveDebug LogLevel = "debug"
-	LogLeveInfo  LogLevel = "info"
-	LogLeveWarn  LogLevel = "warn"
-	LogLeveError LogLevel = "error"
-)
-
-const (
 	ConfigTypeJson ConfigType = "json"
 	ConfigTypeYaml ConfigType = "yaml"
 )
 
-var namespace string
 var nm *nacosManager
-
-type NacosServer struct {
-	Addr string
-	Port uint
-}
 
 type nacosManager struct {
 	ccl sync.Mutex
 	ncl sync.Mutex
-	cc  map[string]*ConfigClient
-	nc  map[string]*NamingClient
+	cc  map[string]*configClient
+	nc  map[string]*namingClient
 }
 
 type NacosServerConfig struct {
-	Services []NacosServer
+	Services []constant.ServerConfig
 }
 
 type NacosClientConfig struct {
-	Namespace string
-	TimeoutMs uint
-	LogDir    string
-	CacheDir  string
-	LogLevel  LogLevel
-	Username  string
-	Password  string
+	*constant.ClientConfig
 }
 
-type InitConfig struct {
+type InitConfigSettings struct {
 	ConfigSetting []*ConfigFileSetting
 	GroupName     string
 }
 
-type NacosModule struct {
-	GrpcModuleConfig *declaration.ModuleConfig
+type NacosStarter struct {
 
-	DisableConfig    bool
-	DisableDiscovery bool
+	// nacos组件模块设置
+	GrpcModuleConfig *parent.Setting
 
 	ServerConfig *NacosServerConfig
 	ClientConfig *NacosClientConfig
 
+	// 禁用配置功能
+	DisableConfig bool
+	// 禁用服务发现功能
+	DisableDiscovery bool
+
 	// 需要立即初始化的配置
-	InitConfig *InitConfig
+	// 该设置将在nacos就绪后立即执行，适用于初始化配置其他模块可以立即在后续读取
+	InitConfigSettings *InitConfigSettings
 }
 
-func (n *NacosModule) ModuleConfig() *declaration.ModuleConfig {
+func (n *NacosStarter) Setting() *parent.Setting {
 	if n.GrpcModuleConfig != nil {
 		return n.GrpcModuleConfig
 	}
-	return &declaration.ModuleConfig{
-		ModuleName:               "Nacos",
-		UnregisterPriority:       1,
-		UnregisterAllowAsync:     true,
-		UnregisterMaxWaitSeconds: 30,
-	}
+	return parent.NewSetting("Nacos-Starter", 1, false, time.Second*30, nil)
 }
 
-func (n *NacosModule) Register() (interface{}, error) {
+func (n *NacosStarter) Start() (interface{}, error) {
 
 	if n.DisableDiscovery && n.DisableConfig {
-		return nil, errors.New("disabled config and discovery")
+		return nil, errors.New("config and discover modules are disabled")
 	}
 	if n.ServerConfig == nil || n.ClientConfig == nil || len(n.ServerConfig.Services) == 0 {
-		return nil, errors.New("bad config")
+		return nil, errors.New("bad nacos config")
 	}
 
-	nm = &nacosManager{cc: make(map[string]*ConfigClient), nc: make(map[string]*NamingClient)}
+	nm = &nacosManager{cc: make(map[string]*configClient), nc: make(map[string]*namingClient)}
 
-	nacosSrvNodes := make([]constant.ServerConfig, len(n.ServerConfig.Services))
-	for i, v := range n.ServerConfig.Services {
-		nacosSrvNodes[i] = constant.ServerConfig{
-			IpAddr: v.Addr,
-			Port:   uint64(v.Port),
-		}
+	if len(n.ServerConfig.Services) == 0 {
+		return nil, errors.New("bad service config")
 	}
 
-	if n.ClientConfig.Namespace == "public" {
-		namespace = ""
-	} else {
-		namespace = n.ClientConfig.Namespace
-	}
-
-	clientConfig := &constant.ClientConfig{
-		NamespaceId:         namespace,
-		CacheDir:            n.ClientConfig.CacheDir,
-		Username:            n.ClientConfig.Username,
-		Password:            n.ClientConfig.Password,
-		LogDir:              n.ClientConfig.LogDir,
-		LogLevel:            string(n.ClientConfig.LogLevel),
-		NotLoadCacheAtStart: true,
-	}
-
-	if n.ClientConfig.TimeoutMs > 0 {
-		clientConfig.TimeoutMs = uint64(n.ClientConfig.TimeoutMs)
+	if n.ClientConfig.ClientConfig.NamespaceId == "public" {
+		n.ClientConfig.ClientConfig.NamespaceId = ""
 	}
 
 	if !n.DisableConfig {
 		cc, err := clients.NewConfigClient(vo.NacosClientParam{
-			ServerConfigs: nacosSrvNodes,
-			ClientConfig:  clientConfig,
+			ServerConfigs: n.ServerConfig.Services,
+			ClientConfig:  n.ClientConfig.ClientConfig,
 		})
+
 		if err != nil {
 			return nil, err
 		}
-		configInstance = cc
 
-		if n.InitConfig != nil && len(n.InitConfig.ConfigSetting) > 0 && n.InitConfig.GroupName != "" {
-			client, _ := GetConfigClient(n.InitConfig.GroupName)
-			err = client.LoadAndWatchConfig(n.InitConfig.ConfigSetting)
+		configInstance = cc
+		if n.InitConfigSettings != nil && len(n.InitConfigSettings.ConfigSetting) > 0 && n.InitConfigSettings.GroupName != "" {
+			client, _ := GetConfigClient(n.InitConfigSettings.GroupName)
+			err = client.LoadAndWatchConfig(n.InitConfigSettings.ConfigSetting)
 			if err != nil {
 				return nil, err
 			}
@@ -159,8 +120,8 @@ func (n *NacosModule) Register() (interface{}, error) {
 	if !n.DisableDiscovery {
 		nc, err := clients.NewNamingClient(
 			vo.NacosClientParam{
-				ClientConfig:  clientConfig,
-				ServerConfigs: nacosSrvNodes,
+				ClientConfig:  n.ClientConfig.ClientConfig,
+				ServerConfigs: n.ServerConfig.Services,
 			},
 		)
 		if err != nil {
@@ -168,11 +129,10 @@ func (n *NacosModule) Register() (interface{}, error) {
 		}
 		namingInstance = nc
 	}
-
 	return nil, nil
 }
 
-func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
+func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool, err error) {
 	if configInstance != nil {
 		configInstance.CloseClient()
 	}
@@ -183,9 +143,9 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 				for id, i := range v.registered {
 					flag, err := v.Unregister(id)
 					if err != nil {
-						logger.Logrus().WithError(err).Error("unregister instance failed ip", i.Ip, "port", i.Port)
+						logger.Logrus().WithError(err).Error("unregister instance failed ip:", i.Ip, "port:", i.Port)
 					} else {
-						logger.Logrus().Debugln("unregister instance ip", i.Ip, "port", i.Port, "result", flag)
+						logger.Logrus().Traceln("unregister instance ip:", i.Ip, "port:", i.Port, "result:", flag)
 					}
 				}
 			}
@@ -194,21 +154,21 @@ func (n *NacosModule) Unregister(maxWaitSeconds uint) (bool, error) {
 		}()
 		select {
 		case <-done:
-			return true, nil
-		case <-time.After(time.Second * time.Duration(maxWaitSeconds)):
-			return false, nil
+			return true, true, nil
+		case <-time.After(maxWaitTime):
+			return false, true, nil
 		}
 	}
-	return true, nil
+	return true, true, nil
 }
 
-type ConfigClient struct {
+type configClient struct {
 	mu      sync.Mutex
 	group   string
 	watched map[string]*vo.ConfigParam
 }
 
-type NamingClient struct {
+type namingClient struct {
 	mu         sync.Mutex
 	group      string
 	registered map[string]vo.RegisterInstanceParam
@@ -237,7 +197,7 @@ func deserializeConfig(content string, configType ConfigType, value any) error {
 	return errors.New("known config type " + string(configType))
 }
 
-func GetConfigClient(group string) (*ConfigClient, error) {
+func GetConfigClient(group string) (*configClient, error) {
 	if configInstance == nil {
 		return nil, errors.New("disabled config client")
 	}
@@ -247,12 +207,12 @@ func GetConfigClient(group string) (*ConfigClient, error) {
 	if ok {
 		return v, nil
 	}
-	v = &ConfigClient{group: group, watched: make(map[string]*vo.ConfigParam)}
+	v = &configClient{group: group, watched: make(map[string]*vo.ConfigParam)}
 	nm.cc[group] = v
 	return v, nil
 }
 
-func GetNamingClient(group string) (*NamingClient, error) {
+func GetNamingClient(group string) (*namingClient, error) {
 	if namingInstance == nil {
 		return nil, errors.New("disabled discover client")
 	}
@@ -262,18 +222,18 @@ func GetNamingClient(group string) (*NamingClient, error) {
 	if ok {
 		return v, nil
 	}
-	v = &NamingClient{group: group, registered: make(map[string]vo.RegisterInstanceParam), watched: make(map[string]*vo.SubscribeParam)}
+	v = &namingClient{group: group, registered: make(map[string]vo.RegisterInstanceParam), watched: make(map[string]*vo.SubscribeParam)}
 	nm.nc[group] = v
 	return v, nil
 }
 
 // GetConfigRawContent 获取指定配置的源文件内容
-func (c *ConfigClient) GetConfigRawContent(dataId string) (string, error) {
+func (c *configClient) GetConfigRawContent(dataId string) (string, error) {
 	return configInstance.GetConfig(vo.ConfigParam{DataId: dataId, Group: c.group})
 }
 
 // GetConfig 获取指定文件内容并反序列化
-func (c *ConfigClient) GetConfig(dataId string, configType ConfigType, value any) error {
+func (c *configClient) GetConfig(dataId string, configType ConfigType, value any) error {
 	raw, err := c.GetConfigRawContent(dataId)
 	if err != nil {
 		return nil
@@ -282,7 +242,7 @@ func (c *ConfigClient) GetConfig(dataId string, configType ConfigType, value any
 }
 
 // WatchConfig 监听文件变化
-func (c *ConfigClient) WatchConfig(dataId string, watch ConfigChangeListener) (string, error) {
+func (c *configClient) WatchConfig(dataId string, watch ConfigChangeListener) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	param := vo.ConfigParam{DataId: dataId, Group: c.group}
@@ -295,7 +255,7 @@ func (c *ConfigClient) WatchConfig(dataId string, watch ConfigChangeListener) (s
 }
 
 // UnwatchConfig 取消监听文件变化
-func (c *ConfigClient) UnwatchConfig(watchId string) error {
+func (c *configClient) UnwatchConfig(watchId string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	v, ok := c.watched[watchId]
@@ -306,7 +266,7 @@ func (c *ConfigClient) UnwatchConfig(watchId string) error {
 }
 
 // LoadAndWatchConfig 获取并监听配置变化
-func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) error {
+func (c *configClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) error {
 	if len(configFiles) == 0 {
 		return errors.New("empty config file")
 	}
@@ -331,7 +291,7 @@ func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) erro
 }
 
 // Register 向注册中心注册实例
-func (n *NamingClient) Register(ip, serviceName string, port, weight int, metadata map[string]string) (string, error) {
+func (n *namingClient) Register(ip, serviceName string, port, weight int, metadata map[string]string) (string, error) {
 	i := vo.RegisterInstanceParam{
 		Ip:          ip,
 		ServiceName: serviceName,
@@ -357,7 +317,7 @@ func (n *NamingClient) Register(ip, serviceName string, port, weight int, metada
 }
 
 // Unregister 向注册中心注销实例
-func (n *NamingClient) Unregister(instanceId string) (bool, error) {
+func (n *namingClient) Unregister(instanceId string) (bool, error) {
 	v, ok := n.registered[instanceId]
 	if !ok {
 		return false, nil
@@ -376,7 +336,7 @@ func (n *NamingClient) Unregister(instanceId string) (bool, error) {
 }
 
 // GetService 获取指定服务的注册信息 仅可用状态
-func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
+func (n *namingClient) GetService(serviceName string) (model.Service, error) {
 	return namingInstance.GetService(vo.GetServiceParam{
 		ServiceName: serviceName,
 		GroupName:   n.group,
@@ -384,7 +344,7 @@ func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
 }
 
 // GetAllServiceInfo 获取指定所有服务的注册信息
-func (n *NamingClient) GetAllServiceInfo(pageNo, pageSize uint) (model.ServiceList, error) {
+func (n *namingClient) GetAllServiceInfo(namespace string, pageNo, pageSize uint) (model.ServiceList, error) {
 	return namingInstance.GetAllServicesInfo(vo.GetAllServiceInfoParam{
 		NameSpace: namespace,
 		GroupName: n.group,
@@ -394,12 +354,12 @@ func (n *NamingClient) GetAllServiceInfo(pageNo, pageSize uint) (model.ServiceLi
 }
 
 // GetAllInstance 获取指定服务的所有实例(不论当前是否可用)
-func (n *NamingClient) GetAllInstance(serviceName string) ([]model.Instance, error) {
+func (n *namingClient) GetAllInstance(serviceName string) ([]model.Instance, error) {
 	return namingInstance.SelectAllInstances(vo.SelectAllInstancesParam{ServiceName: serviceName, GroupName: n.group})
 }
 
 // ChooseOneHealthyRandom 选择一个可用的实例
-func (n *NamingClient) ChooseOneHealthyRandom(serviceName string) (*ServiceInstance, error) {
+func (n *namingClient) ChooseOneHealthyRandom(serviceName string) (*ServiceInstance, error) {
 	instance, err := namingInstance.SelectOneHealthyInstance(vo.SelectOneHealthInstanceParam{ServiceName: serviceName, GroupName: n.group})
 	if err != nil {
 		return nil, err
@@ -408,7 +368,7 @@ func (n *NamingClient) ChooseOneHealthyRandom(serviceName string) (*ServiceInsta
 }
 
 // WatchNaming 监控服务的实例变化
-func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []model.Instance, err error)) (string, error) {
+func (n *namingClient) WatchNaming(serviceName string, watch func(instance []model.Instance, err error)) (string, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	param := &vo.SubscribeParam{ServiceName: serviceName, GroupName: n.group}
@@ -419,7 +379,7 @@ func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []mod
 }
 
 // UnwatchNaming 取消监控服务实例变化
-func (n *NamingClient) UnwatchNaming(watchId string) error {
+func (n *namingClient) UnwatchNaming(watchId string) error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	v, ok := n.watched[watchId]
