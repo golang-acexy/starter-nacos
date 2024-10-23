@@ -70,15 +70,12 @@ func (n *NacosStarter) Start() (interface{}, error) {
 	}
 
 	nm = &nacosManager{cc: make(map[string]*ConfigClient), nc: make(map[string]*NamingClient)}
-
 	if len(n.ServerConfig.Services) == 0 {
 		return nil, errors.New("bad service config")
 	}
-
 	if n.ClientConfig.ClientConfig.NamespaceId == "public" {
 		n.ClientConfig.ClientConfig.NamespaceId = ""
 	}
-
 	if !n.DisableConfig {
 		cc, err := clients.NewConfigClient(vo.NacosClientParam{
 			ServerConfigs: n.ServerConfig.Services,

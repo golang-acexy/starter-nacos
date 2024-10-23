@@ -153,7 +153,7 @@ func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) erro
 	return nil
 }
 
-// Register 向注册中心注册实例
+// Register 向注册中心注册临时实例
 func (n *NamingClient) Register(ip, serviceName string, port, weight int, metadata map[string]string) (string, error) {
 	i := vo.RegisterInstanceParam{
 		Ip:          ip,
@@ -216,13 +216,18 @@ func (n *NamingClient) GetAllServiceInfo(namespace string, pageNo, pageSize uint
 	})
 }
 
-// GetAllInstance 获取指定服务的所有实例(不论当前是否可用)
-func (n *NamingClient) GetAllInstance(serviceName string) ([]model.Instance, error) {
+// GetAllInstances 获取指定服务的所有实例(不论当前是否可用)
+func (n *NamingClient) GetAllInstances(serviceName string) ([]model.Instance, error) {
 	return namingInstance.SelectAllInstances(vo.SelectAllInstancesParam{ServiceName: serviceName, GroupName: n.group})
 }
 
-// ChooseOneHealthyRandom 选择一个可用的实例
-func (n *NamingClient) ChooseOneHealthyRandom(serviceName string) (*ServiceInstance, error) {
+// GetHealthyInstances 获取指定服务的可用实例
+func (n *NamingClient) GetHealthyInstances(serviceName string) ([]model.Instance, error) {
+	return namingInstance.SelectInstances(vo.SelectInstancesParam{ServiceName: serviceName, GroupName: n.group})
+}
+
+// ChooseOneHealthy 选择一个可用的实例
+func (n *NamingClient) ChooseOneHealthy(serviceName string) (*ServiceInstance, error) {
 	instance, err := namingInstance.SelectOneHealthyInstance(vo.SelectOneHealthInstanceParam{ServiceName: serviceName, GroupName: n.group})
 	if err != nil {
 		return nil, err

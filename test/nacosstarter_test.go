@@ -26,7 +26,7 @@ func init() {
 			}},
 			ClientConfig: &nacosstarter.NacosClientConfig{
 				ClientConfig: &constant.ClientConfig{
-					NamespaceId:         "wallet-dev",
+					NamespaceId:         "demo",
 					Username:            "nacos",
 					Password:            "nacos",
 					LogLevel:            "error",
@@ -125,7 +125,7 @@ func TestRegister(t *testing.T) {
 		fmt.Println("register failed")
 		return
 	}
-	loader.StopBySetting()
+	sys.ShutdownHolding()
 }
 
 func TestGetService(t *testing.T) {
@@ -147,7 +147,7 @@ func TestGetService(t *testing.T) {
 func TestChooseOneHealthyRandom(t *testing.T) {
 	nc, _ := nacosstarter.GetNamingClient("WALLET")
 	for i := 1; i <= 30; i++ {
-		service, _ := nc.ChooseOneHealthyRandom("account-server")
+		service, _ := nc.ChooseOneHealthy("account-server")
 		fmt.Println(json.ToJsonFormat(service))
 		time.Sleep(time.Second * 5)
 	}
