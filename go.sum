@@ -36,6 +36,8 @@ github.com/alibabacloud-go/tea-utils/v2 v2.0.7/go.mod h1:qxn986l+q33J5VkialKMqT/
 github.com/aliyun/alibaba-cloud-sdk-go v1.61.1800/go.mod h1:RcDobYh8k5VP6TNybz9m++gL3ijVI5wueVr0EM10VsU=
 github.com/aliyun/alibaba-cloud-sdk-go v1.63.34 h1:eZM2MHY/p4TFO1pGf9O5HiuYE59hwrrkf3HvCtkL5Ok=
 github.com/aliyun/alibaba-cloud-sdk-go v1.63.34/go.mod h1:SOSDHfe1kX91v3W5QiBsWSLqeLxImobbMX1mxrFHsVQ=
+github.com/aliyun/alibaba-cloud-sdk-go v1.63.37 h1:vKU1sExo53BahxdlVZYN8xPx4KVBABVMInxvQwN+cG8=
+github.com/aliyun/alibaba-cloud-sdk-go v1.63.37/go.mod h1:SOSDHfe1kX91v3W5QiBsWSLqeLxImobbMX1mxrFHsVQ=
 github.com/aliyun/alibabacloud-dkms-gcs-go-sdk v0.5.1 h1:nJYyoFP+aqGKgPs9JeZgS1rWQ4NndNR0Zfhh161ZltU=
 github.com/aliyun/alibabacloud-dkms-gcs-go-sdk v0.5.1/go.mod h1:WzGOmFFTlUzXM03CJnHWMQ85UN6QGpOXZocCjwkiyOg=
 github.com/aliyun/alibabacloud-dkms-transfer-go-sdk v0.1.9 h1:GCzdF5XjQ6LED6wdvEq2MKSlBQmQDkvYRw2S8Qnbo4Y=
