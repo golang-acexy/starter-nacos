@@ -135,10 +135,6 @@ type InitConfigSettings struct {
 }
 
 type NacosStarter struct {
-
-	// nacos组件模块设置
-	GrpcModuleConfig *parent.Setting
-
 	ServerConfig *NacosServerConfig
 	ClientConfig *NacosClientConfig
 
@@ -150,11 +146,13 @@ type NacosStarter struct {
 	// 需要立即初始化的配置
 	// 该设置将在nacos就绪后立即执行，适用于初始化配置其他模块可以立即在后续读取
 	InitConfigSettings *InitConfigSettings
+
+	NacosSetting *parent.Setting
 }
 
 func (n *NacosStarter) Setting() *parent.Setting {
-	if n.GrpcModuleConfig != nil {
-		return n.GrpcModuleConfig
+	if n.NacosSetting != nil {
+		return n.NacosSetting
 	}
 	return parent.NewSetting("Nacos-Starter", 1, false, time.Second*30, nil)
 }
