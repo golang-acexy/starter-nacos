@@ -14,24 +14,26 @@ var initConfig = new([]JsonConfig)
 func init() {
 	loader = parent.NewStarterLoader([]parent.Starter{
 		&nacosstarter.NacosStarter{
-			ServerConfig: &nacosstarter.NacosServerConfig{Services: []constant.ServerConfig{
-				{IpAddr: "localhost", Port: 8848},
-			}},
-			ClientConfig: &nacosstarter.NacosClientConfig{
-				ClientConfig: &constant.ClientConfig{
-					NamespaceId:         "demo",
-					Username:            "nacos",
-					Password:            "nacos",
-					LogLevel:            "debug",
-					LogDir:              "./",
-					CacheDir:            "./",
-					NotLoadCacheAtStart: true,
+			Config: nacosstarter.NacosConfig{
+				ServerConfig: &nacosstarter.NacosServerConfig{Services: []constant.ServerConfig{
+					{IpAddr: "localhost", Port: 8848},
+				}},
+				ClientConfig: &nacosstarter.NacosClientConfig{
+					ClientConfig: &constant.ClientConfig{
+						NamespaceId:         "demo",
+						Username:            "nacos",
+						Password:            "nacos",
+						LogLevel:            "debug",
+						LogDir:              "./",
+						CacheDir:            "./",
+						NotLoadCacheAtStart: true,
+					},
 				},
-			},
-			InitConfigSettings: &nacosstarter.InitConfigSettings{
-				GroupName: "CLOUD",
-				ConfigSetting: []*nacosstarter.ConfigFileSetting{
-					{DataId: "flow-rule.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initConfig},
+				InitConfigSettings: &nacosstarter.InitConfigSettings{
+					GroupName: "CLOUD",
+					ConfigSetting: []*nacosstarter.ConfigFileSetting{
+						{DataId: "flow-rule.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initConfig},
+					},
 				},
 			},
 		},
