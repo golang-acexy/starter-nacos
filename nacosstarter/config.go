@@ -8,6 +8,16 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 )
 
+type ConfigType string
+
+// ConfigChangeData 文件变动监听回调
+type ConfigChangeData func(namespace, group, dataId, data string)
+
+const (
+	ConfigTypeJson ConfigType = "json"
+	ConfigTypeYaml ConfigType = "yaml"
+)
+
 // Config
 
 // GetConfigRawContent 获取指定配置的源文件内容

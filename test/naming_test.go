@@ -12,7 +12,7 @@ import (
 )
 
 func TestRegister(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("CLOUD")
+	nc, _ := nacosstarter.GetNamingClient("TEST")
 	_, err := nc.Register(nacosstarter.Instance{Ip: "127.0.0.1", ServiceName: "go", Port: 8082, Weight: 1})
 	if err != nil {
 		fmt.Printf("%+v\n", err)
@@ -25,7 +25,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestRegisterBatch(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("CLOUD")
+	nc, _ := nacosstarter.GetNamingClient("TEST")
 	_, err := nc.RegisterBatch("go", []nacosstarter.InstanceBatch{
 		{Ip: "127.0.0.1", Port: 8082, Weight: 1},
 		{Ip: "127.0.0.1", Port: 8083, Weight: 1},
@@ -37,7 +37,7 @@ func TestRegisterBatch(t *testing.T) {
 }
 
 func TestGetService(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("CLOUD")
+	nc, _ := nacosstarter.GetNamingClient("TEST")
 	service, err := nc.GetService("go")
 	if err != nil {
 		println(err)
@@ -51,7 +51,7 @@ func TestGetService(t *testing.T) {
 }
 
 func TestGetAllInstances(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("CLOUD")
+	nc, _ := nacosstarter.GetNamingClient("TEST")
 	instances, err := nc.GetAllInstances("go")
 	if err != nil {
 		println(err)
@@ -60,7 +60,7 @@ func TestGetAllInstances(t *testing.T) {
 }
 
 func TestGetHealthyInstances(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("CLOUD")
+	nc, _ := nacosstarter.GetNamingClient("TEST")
 	for i := 1; i <= 10; i++ {
 		instances, err := nc.GetHealthyInstances("go")
 		if err != nil {

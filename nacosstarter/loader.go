@@ -21,16 +21,6 @@ var namingInstance naming_client.INamingClient
 var nm *nacosManager
 var namespace string
 
-type ConfigType string
-
-// ConfigChangeData 文件变动监听回调
-type ConfigChangeData func(namespace, group, dataId, data string)
-
-const (
-	ConfigTypeJson ConfigType = "json"
-	ConfigTypeYaml ConfigType = "yaml"
-)
-
 // 针对多group的nacos实例管理器
 type nacosManager struct {
 	configLocker sync.Mutex
@@ -204,7 +194,7 @@ func (n *NacosStarter) Start() (interface{}, error) {
 			return nil, err
 		}
 		configInstance = cc
-		if len(config.InitConfigSettings.ConfigSetting) > 0 && config.InitConfigSettings.GroupName != "" {
+		if config.InitConfigSettings != nil && len(config.InitConfigSettings.ConfigSetting) > 0 && config.InitConfigSettings.GroupName != "" {
 			client, _ := GetConfigClient(config.InitConfigSettings.GroupName)
 			err = client.LoadAndWatchConfig(config.InitConfigSettings.ConfigSetting)
 			if err != nil {

@@ -1,15 +1,18 @@
 package test
 
 import (
+	"fmt"
+	"github.com/acexy/golang-toolkit/sys"
+	"github.com/acexy/golang-toolkit/util/json"
 	"github.com/golang-acexy/starter-nacos/nacosstarter"
 	"github.com/golang-acexy/starter-parent/parent"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"testing"
+	"time"
 )
 
 var loader *parent.StarterLoader
-var initConfig = new([]JsonConfig)
 
 func init() {
 	loader = parent.NewStarterLoader([]parent.Starter{
@@ -20,7 +23,7 @@ func init() {
 				}},
 				ClientConfig: &nacosstarter.NacosClientConfig{
 					ClientConfig: &constant.ClientConfig{
-						NamespaceId:         "demo",
+						//NamespaceId:         "public",
 						Username:            "nacos",
 						Password:            "nacos",
 						LogLevel:            "debug",
@@ -30,9 +33,9 @@ func init() {
 					},
 				},
 				InitConfigSettings: &nacosstarter.InitConfigSettings{
-					GroupName: "CLOUD",
+					GroupName: "TEST",
 					ConfigSetting: []*nacosstarter.ConfigFileSetting{
-						{DataId: "flow-rule.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initConfig},
+						{DataId: "json.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initJsonConfig},
 					},
 				},
 			},
@@ -43,6 +46,24 @@ func init() {
 		println(err)
 		return
 	}
+}
+
+func TestGetConfig(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				fmt.Println(json.ToJson(initJsonConfig))
+				time.Sleep(time.Second * 2)
+			}
+		}
+	}()
+	sys.ShutdownCallback(func() {
+		done <- struct{}{}
+	})
 }
 
 func TestRawNC(t *testing.T) {
