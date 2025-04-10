@@ -196,10 +196,7 @@ func (n *NacosStarter) Start() (interface{}, error) {
 		configInstance = cc
 		if config.InitConfigSettings != nil && len(config.InitConfigSettings.ConfigSetting) > 0 && config.InitConfigSettings.GroupName != "" {
 			client, _ := GetConfigClient(config.InitConfigSettings.GroupName)
-			err = client.LoadAndWatchConfig(config.InitConfigSettings.ConfigSetting)
-			if err != nil {
-				return nil, err
-			}
+			client.LoadAndWatchConfig(config.InitConfigSettings.ConfigSetting)
 		}
 	}
 	if !config.DisableDiscovery {

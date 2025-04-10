@@ -67,14 +67,15 @@ func (c *ConfigClient) UnwatchConfig(watchId string) error {
 }
 
 // LoadAndWatchConfig 获取并监听配置变化
-func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) error {
+func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) {
 	if len(configFiles) == 0 {
-		return errors.New("empty config file")
+		logger.Logrus().Warningln("empty config file")
+		return
 	}
 	for _, f := range configFiles {
 		err := c.GetConfig(f.DataId, f.Type, f.Value)
 		if err != nil {
-			return err
+			logger.Logrus().Errorln("cant load config file:", f.DataId, err)
 		}
 		if f.Watch {
 			_, err = c.WatchConfig(f.DataId, func(namespace, group, dataId, data string) {
@@ -83,8 +84,6 @@ func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) erro
 					logger.Logrus().WithError(err).Error("cant deserialize content:", data)
 				}
 			})
-			return err
 		}
 	}
-	return nil
 }
