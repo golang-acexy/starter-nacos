@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var initJsonConfig = new(JsonConfig)
+
 type YamlConfig struct {
 	Server struct {
 		Port int `yaml:"port"`
@@ -15,16 +17,28 @@ type YamlConfig struct {
 }
 
 type JsonConfig struct {
-	Resource        string `json:"resource"`
-	ControlBehavior int    `json:"controlBehavior"`
-	Count           int    `json:"count"`
-	Grade           int    `json:"grade"`
-	Strategy        int    `json:"strategy"`
-	ClusterMode     bool   `json:"clusterMode"`
+	StartChargeSeq     string  `json:"StartChargeSeq"`
+	StartChargeSeqStat int     `json:"StartChargeSeqStat"`
+	ConnectorID        string  `json:"ConnectorID"`
+	ConnectorStatus    int     `json:"ConnectorStatus"`
+	LineTemp           int     `json:"LineTemp"`
+	LineVoltage        float64 `json:"LineVoltage"`
+	VoltageA           float64 `json:"VoltageA"`
+	CurrentA           float64 `json:"CurrentA"`
+	Soc                int     `json:"Soc"`
+	StartTime          string  `json:"StartTime"`
+	EndTime            string  `json:"EndTime"`
+	ElecMoney          float64 `json:"ElecMoney"`
+	Elect              float64 `json:"Elect"`
+	Money              float64 `json:"Money"`
+	ElectMoney         float64 `json:"ElectMoney"`
+	ServiceMoney       float64 `json:"ServiceMoney"`
+	PayChannel         int     `json:"PayChannel"`
+	OperatorID         string  `json:"OperatorID"`
 }
 
 func TestInitConfig(t *testing.T) {
-	fmt.Printf("inited config %+v\n", initConfig)
+	fmt.Printf("inited config %+v\n", initJsonConfig)
 }
 
 func TestConfig(t *testing.T) {

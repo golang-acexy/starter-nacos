@@ -21,16 +21,6 @@ var namingInstance naming_client.INamingClient
 var nm *nacosManager
 var namespace string
 
-type ConfigType string
-
-// ConfigChangeData 文件变动监听回调
-type ConfigChangeData func(namespace, group, dataId, data string)
-
-const (
-	ConfigTypeJson ConfigType = "json"
-	ConfigTypeYaml ConfigType = "yaml"
-)
-
 // 针对多group的nacos实例管理器
 type nacosManager struct {
 	configLocker sync.Mutex
@@ -134,7 +124,7 @@ type InitConfigSettings struct {
 	GroupName     string
 }
 
-type NacosStarter struct {
+type NacosConfig struct {
 	ServerConfig *NacosServerConfig
 	ClientConfig *NacosClientConfig
 
@@ -146,8 +136,27 @@ type NacosStarter struct {
 	// 需要立即初始化的配置
 	// 该设置将在nacos就绪后立即执行，适用于初始化配置其他模块可以立即在后续读取
 	InitConfigSettings *InitConfigSettings
+}
 
+type NacosStarter struct {
+	Config     NacosConfig
+	LazyConfig func() NacosConfig
+
+	config       *NacosConfig
 	NacosSetting *parent.Setting
+}
+
+func (n *NacosStarter) getConfig() *NacosConfig {
+	if n.config == nil {
+		var config NacosConfig
+		if n.LazyConfig != nil {
+			config = n.LazyConfig()
+		} else {
+			config = n.Config
+		}
+		n.config = &config
+	}
+	return n.config
 }
 
 func (n *NacosStarter) Setting() *parent.Setting {
@@ -159,43 +168,45 @@ func (n *NacosStarter) Setting() *parent.Setting {
 
 func (n *NacosStarter) Start() (interface{}, error) {
 
-	if n.DisableDiscovery && n.DisableConfig {
+	config := n.getConfig()
+
+	if config.DisableDiscovery && config.DisableConfig {
 		return nil, errors.New("config and discover modules are disabled")
 	}
-	if n.ServerConfig == nil || n.ClientConfig == nil || len(n.ServerConfig.Services) == 0 {
+	if config.ServerConfig == nil || config.ClientConfig == nil || len(config.ServerConfig.Services) == 0 {
 		return nil, errors.New("bad nacos config")
 	}
 
 	nm = &nacosManager{configClient: make(map[string]*ConfigClient), namingClient: make(map[string]*NamingClient)}
-	if len(n.ServerConfig.Services) == 0 {
+	if len(config.ServerConfig.Services) == 0 {
 		return nil, errors.New("bad service config")
 	}
-	if n.ClientConfig.ClientConfig.NamespaceId == "public" {
-		n.ClientConfig.ClientConfig.NamespaceId = ""
+	if config.ClientConfig.ClientConfig.NamespaceId == "public" {
+		config.ClientConfig.ClientConfig.NamespaceId = ""
 	}
-	namespace = n.ClientConfig.NamespaceId
-	if !n.DisableConfig {
+	namespace = config.ClientConfig.NamespaceId
+	if !config.DisableConfig {
 		cc, err := clients.NewConfigClient(vo.NacosClientParam{
-			ServerConfigs: n.ServerConfig.Services,
-			ClientConfig:  n.ClientConfig.ClientConfig,
+			ServerConfigs: config.ServerConfig.Services,
+			ClientConfig:  config.ClientConfig.ClientConfig,
 		})
 		if err != nil {
 			return nil, err
 		}
 		configInstance = cc
-		if n.InitConfigSettings != nil && len(n.InitConfigSettings.ConfigSetting) > 0 && n.InitConfigSettings.GroupName != "" {
-			client, _ := GetConfigClient(n.InitConfigSettings.GroupName)
-			err = client.LoadAndWatchConfig(n.InitConfigSettings.ConfigSetting)
+		if config.InitConfigSettings != nil && len(config.InitConfigSettings.ConfigSetting) > 0 && config.InitConfigSettings.GroupName != "" {
+			client, _ := GetConfigClient(config.InitConfigSettings.GroupName)
+			err = client.LoadAndWatchConfig(config.InitConfigSettings.ConfigSetting)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
-	if !n.DisableDiscovery {
+	if !config.DisableDiscovery {
 		nc, err := clients.NewNamingClient(
 			vo.NacosClientParam{
-				ClientConfig:  n.ClientConfig.ClientConfig,
-				ServerConfigs: n.ServerConfig.Services,
+				ClientConfig:  config.ClientConfig.ClientConfig,
+				ServerConfigs: config.ServerConfig.Services,
 			},
 		)
 		if err != nil {

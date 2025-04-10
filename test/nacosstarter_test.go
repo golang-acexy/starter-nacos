@@ -1,37 +1,42 @@
 package test
 
 import (
+	"fmt"
+	"github.com/acexy/golang-toolkit/sys"
+	"github.com/acexy/golang-toolkit/util/json"
 	"github.com/golang-acexy/starter-nacos/nacosstarter"
 	"github.com/golang-acexy/starter-parent/parent"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"testing"
+	"time"
 )
 
 var loader *parent.StarterLoader
-var initConfig = new([]JsonConfig)
 
 func init() {
 	loader = parent.NewStarterLoader([]parent.Starter{
 		&nacosstarter.NacosStarter{
-			ServerConfig: &nacosstarter.NacosServerConfig{Services: []constant.ServerConfig{
-				{IpAddr: "localhost", Port: 8848},
-			}},
-			ClientConfig: &nacosstarter.NacosClientConfig{
-				ClientConfig: &constant.ClientConfig{
-					NamespaceId:         "demo",
-					Username:            "nacos",
-					Password:            "nacos",
-					LogLevel:            "debug",
-					LogDir:              "./",
-					CacheDir:            "./",
-					NotLoadCacheAtStart: true,
+			Config: nacosstarter.NacosConfig{
+				ServerConfig: &nacosstarter.NacosServerConfig{Services: []constant.ServerConfig{
+					{IpAddr: "localhost", Port: 8848},
+				}},
+				ClientConfig: &nacosstarter.NacosClientConfig{
+					ClientConfig: &constant.ClientConfig{
+						//NamespaceId:         "public",
+						Username:            "nacos",
+						Password:            "nacos",
+						LogLevel:            "debug",
+						LogDir:              "./",
+						CacheDir:            "./",
+						NotLoadCacheAtStart: true,
+					},
 				},
-			},
-			InitConfigSettings: &nacosstarter.InitConfigSettings{
-				GroupName: "CLOUD",
-				ConfigSetting: []*nacosstarter.ConfigFileSetting{
-					{DataId: "flow-rule.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initConfig},
+				InitConfigSettings: &nacosstarter.InitConfigSettings{
+					GroupName: "TEST",
+					ConfigSetting: []*nacosstarter.ConfigFileSetting{
+						{DataId: "json.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initJsonConfig},
+					},
 				},
 			},
 		},
@@ -41,6 +46,24 @@ func init() {
 		println(err)
 		return
 	}
+}
+
+func TestGetConfig(t *testing.T) {
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				fmt.Println(json.ToJson(initJsonConfig))
+				time.Sleep(time.Second * 2)
+			}
+		}
+	}()
+	sys.ShutdownCallback(func() {
+		done <- struct{}{}
+	})
 }
 
 func TestRawNC(t *testing.T) {
