@@ -72,10 +72,10 @@ func TestWatch(t *testing.T) {
 }
 
 func TestLoadAndWatch(t *testing.T) {
-	cc, _ := nacosstarter.GetConfigClient("CLOUD")
+	cc, _ := nacosstarter.GetConfigClient("TEST")
 	var j YamlConfig
 	// 加载指定的配置并自动监听
-	_ = cc.LoadAndWatchConfig([]*nacosstarter.ConfigFileSetting{
+	cc.LoadAndWatchConfig([]*nacosstarter.ConfigFileSetting{
 		{DataId: "demo-gateway.yml", Type: nacosstarter.ConfigTypeYaml, Watch: true, Value: &j},
 	})
 	// loop 通过管理中心修改配置 查看是否自动变化
