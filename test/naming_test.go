@@ -12,12 +12,8 @@ import (
 )
 
 func TestRegister(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("TEST")
-	_, err := nc.Register(nacosstarter.Instance{Ip: "127.0.0.1", ServiceName: "go", Port: 8082, Weight: 1})
-	if err != nil {
-		fmt.Printf("%+v\n", err)
-	}
-	_, err = nc.Register(nacosstarter.Instance{Ip: "127.0.0.1", ServiceName: "go", Port: 8083, Weight: 1})
+	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
+	_, err := nc.Register(nacosstarter.Instance{Ip: "127.0.0.1", ServiceName: "go", Port: 8081, Weight: 1})
 	if err != nil {
 		fmt.Printf("%+v\n", err)
 	}
@@ -25,7 +21,7 @@ func TestRegister(t *testing.T) {
 }
 
 func TestRegisterBatch(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("TEST")
+	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
 	_, err := nc.RegisterBatch("go", []nacosstarter.InstanceBatch{
 		{Ip: "127.0.0.1", Port: 8082, Weight: 1},
 		{Ip: "127.0.0.1", Port: 8083, Weight: 1},
@@ -37,7 +33,7 @@ func TestRegisterBatch(t *testing.T) {
 }
 
 func TestGetService(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("TEST")
+	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
 	service, err := nc.GetService("go")
 	if err != nil {
 		println(err)
@@ -73,7 +69,7 @@ func TestGetHealthyInstances(t *testing.T) {
 }
 
 func TestChooseOneHealthyRandom(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("CLOUD")
+	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
 	for i := 1; i <= 30; i++ {
 		service, _ := nc.ChooseOneHealthyInstance("go")
 		fmt.Println(json.ToJsonFormat(service))
@@ -82,8 +78,9 @@ func TestChooseOneHealthyRandom(t *testing.T) {
 }
 
 func TestWatchNaming(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("CLOUD")
+	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
 	watchId, _ := nc.WatchNaming("go", func(instance []model.Instance, err error) {
+		logger.Logrus().Println("changed")
 		if err != nil {
 			logger.Logrus().WithError(err).Errorln("watch naming error")
 		} else {
@@ -91,7 +88,7 @@ func TestWatchNaming(t *testing.T) {
 		}
 	})
 	go func() {
-		time.Sleep(time.Second * 30)
+		time.Sleep(time.Hour * 60)
 		fmt.Println("unwatch", nc.UnwatchNaming(watchId))
 	}()
 	sys.ShutdownHolding()
