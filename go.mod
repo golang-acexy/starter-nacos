@@ -3,7 +3,7 @@ module github.com/golang-acexy/starter-nacos
 go 1.23.5
 
 require (
-	github.com/acexy/golang-toolkit v0.0.48
+	github.com/acexy/golang-toolkit v0.0.49
 	github.com/golang-acexy/starter-parent v0.1.15
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.2
 	gopkg.in/yaml.v3 v3.0.1
