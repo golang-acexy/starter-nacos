@@ -153,6 +153,7 @@ func (n *NamingClient) ChooseOneHealthyInstance(serviceName string) (*Registered
 }
 
 // WatchNaming 监控服务的实例变化
+// * 如果UpdateCacheWhenEmpty=false 当前服务只有一个实例时，不会触发监听
 func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []model.Instance, err error)) (string, error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()

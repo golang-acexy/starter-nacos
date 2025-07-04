@@ -136,6 +136,9 @@ type NacosConfig struct {
 	// 需要立即初始化的配置
 	// 该设置将在nacos就绪后立即执行，适用于初始化配置其他模块可以立即在后续读取
 	InitConfigSettings *InitConfigSettings
+
+	// Nacos启动完毕后执行的函数
+	AfterInit func(config config_client.IConfigClient, naming naming_client.INamingClient)
 }
 
 type NacosStarter struct {
@@ -210,6 +213,9 @@ func (n *NacosStarter) Start() (interface{}, error) {
 			return nil, err
 		}
 		namingInstance = nc
+	}
+	if config.AfterInit != nil {
+		config.AfterInit(configInstance, namingInstance)
 	}
 	return nil, nil
 }
