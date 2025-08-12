@@ -2,13 +2,14 @@ package test
 
 import (
 	"fmt"
-	"github.com/acexy/golang-toolkit/sys"
-	"github.com/golang-acexy/starter-nacos/nacosstarter"
 	"testing"
 	"time"
+
+	"github.com/acexy/golang-toolkit/sys"
+	"github.com/golang-acexy/starter-nacos/nacosstarter"
 )
 
-var initJsonConfig = new(JsonConfig)
+var jsonConfig = new(JsonConfig)
 
 type YamlConfig struct {
 	Server struct {
@@ -17,32 +18,15 @@ type YamlConfig struct {
 }
 
 type JsonConfig struct {
-	StartChargeSeq     string  `json:"StartChargeSeq"`
-	StartChargeSeqStat int     `json:"StartChargeSeqStat"`
-	ConnectorID        string  `json:"ConnectorID"`
-	ConnectorStatus    int     `json:"ConnectorStatus"`
-	LineTemp           int     `json:"LineTemp"`
-	LineVoltage        float64 `json:"LineVoltage"`
-	VoltageA           float64 `json:"VoltageA"`
-	CurrentA           float64 `json:"CurrentA"`
-	Soc                int     `json:"Soc"`
-	StartTime          string  `json:"StartTime"`
-	EndTime            string  `json:"EndTime"`
-	ElecMoney          float64 `json:"ElecMoney"`
-	Elect              float64 `json:"Elect"`
-	Money              float64 `json:"Money"`
-	ElectMoney         float64 `json:"ElectMoney"`
-	ServiceMoney       float64 `json:"ServiceMoney"`
-	PayChannel         int     `json:"PayChannel"`
-	OperatorID         string  `json:"OperatorID"`
+	Config string `json:"config"`
 }
 
 func TestInitConfig(t *testing.T) {
-	fmt.Printf("inited config %+v\n", initJsonConfig)
+	fmt.Printf("inited config %+v\n", jsonConfig)
 }
 
 func TestConfig(t *testing.T) {
-	cc, _ := nacosstarter.GetConfigClient("CLOUD")
+	cc, _ := nacosstarter.GetConfigClient("DEFAULT_GROUP")
 	content, err := cc.GetConfigRawContent("demo-gateway.yml")
 	fmt.Println("raw gateway.yml", content, err)
 
@@ -57,8 +41,8 @@ func TestConfig(t *testing.T) {
 }
 
 func TestWatch(t *testing.T) {
-	cc, _ := nacosstarter.GetConfigClient("CLOUD")
-	watchId, err := cc.WatchConfig("demo-gateway.yml", func(namespace, group, dataId, data string) {
+	cc, _ := nacosstarter.GetConfigClient("DEFAULT_GROUP")
+	watchId, err := cc.WatchConfig("config.json", func(namespace, group, dataId, data string) {
 		fmt.Println(namespace, group, dataId, data)
 	})
 	if err != nil {
@@ -72,7 +56,7 @@ func TestWatch(t *testing.T) {
 }
 
 func TestLoadAndWatch(t *testing.T) {
-	cc, _ := nacosstarter.GetConfigClient("TEST")
+	cc, _ := nacosstarter.GetConfigClient("DEFAULT_GROUP")
 	var j YamlConfig
 	// 加载指定的配置并自动监听
 	cc.LoadAndWatchConfig([]*nacosstarter.ConfigFileSetting{
