@@ -2,6 +2,9 @@ package nacosstarter
 
 import (
 	"errors"
+	"sync"
+	"time"
+
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/acexy/golang-toolkit/util/json"
 	"github.com/golang-acexy/starter-parent/parent"
@@ -12,8 +15,6 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 	"gopkg.in/yaml.v3"
-	"sync"
-	"time"
 )
 
 var configInstance config_client.IConfigClient
