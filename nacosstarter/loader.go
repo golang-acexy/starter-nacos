@@ -68,6 +68,7 @@ type RegisteredInstance struct {
 func deserializeConfig(content string, configType ConfigType, value any) error {
 	switch configType {
 	case ConfigTypeYaml:
+		clearSliceAndMapInPlace(value)
 		return yaml.Unmarshal([]byte(content), value)
 	case ConfigTypeJson:
 		return json.ParseJsonError(content, value)
