@@ -81,6 +81,7 @@ func deserializeConfig(content string, configType ConfigType, value any) error {
 			return err
 		}
 		elem.Set(reflect.ValueOf(newValue).Elem())
+		return nil
 	case ConfigTypeJson:
 		return json.ParseJsonError(content, value)
 	}
