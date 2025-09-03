@@ -9,6 +9,8 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 )
 
+// Config
+
 type ConfigType string
 
 // ConfigChangeData 文件变动监听回调
@@ -18,8 +20,6 @@ const (
 	ConfigTypeJson ConfigType = "json"
 	ConfigTypeYaml ConfigType = "yaml"
 )
-
-// Config
 
 // GetConfigRawContent 获取指定配置的源文件内容
 func (c *ConfigClient) GetConfigRawContent(dataId string) (string, error) {

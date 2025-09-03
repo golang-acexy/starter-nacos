@@ -2,13 +2,14 @@ package test
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/acexy/golang-toolkit/sys"
 	"github.com/acexy/golang-toolkit/util/json"
 	"github.com/golang-acexy/starter-nacos/nacosstarter"
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
-	"testing"
-	"time"
 )
 
 func TestRegister(t *testing.T) {
