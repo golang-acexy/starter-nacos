@@ -2,17 +2,24 @@ package test
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/acexy/golang-toolkit/sys"
 	"github.com/acexy/golang-toolkit/util/json"
 	"github.com/golang-acexy/starter-nacos/nacosstarter"
 	"github.com/golang-acexy/starter-parent/parent"
 	"github.com/nacos-group/nacos-sdk-go/v2/common/constant"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
-	"testing"
-	"time"
 )
 
 var loader *parent.StarterLoader
+
+type InitJsonConfig struct {
+	Name string `json:"name"`
+}
+
+var initJsonConfig InitJsonConfig
 
 func init() {
 	loader = parent.NewStarterLoader([]parent.Starter{
@@ -35,7 +42,7 @@ func init() {
 				InitConfigSettings: &nacosstarter.InitConfigSettings{
 					GroupName: "TEST",
 					ConfigSetting: []*nacosstarter.ConfigFileSetting{
-						{DataId: "json.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: initJsonConfig},
+						{DataId: "json.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: &initJsonConfig},
 					},
 				},
 			},

@@ -2,6 +2,7 @@ package nacosstarter
 
 import (
 	"errors"
+	"reflect"
 	"sync"
 	"time"
 
@@ -68,7 +69,19 @@ type RegisteredInstance struct {
 func deserializeConfig(content string, configType ConfigType, value any) error {
 	switch configType {
 	case ConfigTypeYaml:
-		return yaml.Unmarshal([]byte(content), value)
+		// 确保value是指针
+		rv := reflect.ValueOf(value)
+		if rv.Kind() != reflect.Ptr || rv.IsNil() {
+			return errors.New("value must be a non-nil pointer")
+		}
+		elem := rv.Elem()
+		newValue := reflect.New(elem.Type()).Interface()
+		err := yaml.Unmarshal([]byte(content), newValue)
+		if err != nil {
+			return err
+		}
+		elem.Set(reflect.ValueOf(newValue).Elem())
+		return nil
 	case ConfigTypeJson:
 		return json.ParseJsonError(content, value)
 	}
