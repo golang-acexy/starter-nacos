@@ -3,8 +3,8 @@ module github.com/golang-acexy/starter-nacos
 go 1.24.6
 
 require (
-	github.com/acexy/golang-toolkit v0.0.53-0.20250928074317-2c31d20270c2
-	github.com/golang-acexy/starter-parent v0.1.19-0.20250928072523-a44bd6e96aa5
+	github.com/acexy/golang-toolkit v0.0.53
+	github.com/golang-acexy/starter-parent v0.1.19
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.3
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -65,7 +65,7 @@ require (
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	golang.org/x/time v0.13.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20250922171735-9219d122eba9 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20250929231259-57b25ae835d4 // indirect
 	google.golang.org/grpc v1.75.1 // indirect
 	google.golang.org/protobuf v1.36.9 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
