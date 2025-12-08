@@ -183,7 +183,7 @@ func (n *NacosStarter) Setting() *parent.Setting {
 	return parent.NewSetting("Nacos-Starter", 0, false, time.Second*30, nil)
 }
 
-func (n *NacosStarter) Start() (interface{}, error) {
+func (n *NacosStarter) Start() (any, error) {
 
 	config := n.getConfig()
 
@@ -239,7 +239,7 @@ func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool
 		configInstance.CloseClient()
 	}
 	if namingInstance != nil {
-		done := make(chan interface{})
+		done := make(chan any)
 		go func() {
 			for _, v := range nm.namingClient {
 				for id, i := range v.registered {
