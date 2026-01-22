@@ -63,7 +63,7 @@ func TestGetConfig(t *testing.T) {
 			case <-done:
 				return
 			default:
-				fmt.Println(json.ToJson(initJsonConfig))
+				fmt.Println(json.ToString(initJsonConfig))
 				time.Sleep(time.Second * 2)
 			}
 		}

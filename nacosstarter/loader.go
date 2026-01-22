@@ -83,7 +83,7 @@ func deserializeConfig(content string, configType ConfigType, value any) error {
 		elem.Set(reflect.ValueOf(newValue).Elem())
 		return nil
 	case ConfigTypeJson:
-		return json.ParseJsonError(content, value)
+		return json.ParseStringError(content, value)
 	}
 	return errors.New("known config type " + string(configType))
 }
