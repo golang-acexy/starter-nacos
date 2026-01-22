@@ -39,12 +39,12 @@ func TestGetService(t *testing.T) {
 	if err != nil {
 		println(err)
 	}
-	fmt.Println(json.ToJsonFormat(service))
+	fmt.Println(json.ToStringFormat(service))
 	serviceList, err := nc.GetServicePage(1, 40)
 	if err != nil {
 		println(err)
 	}
-	fmt.Println(json.ToJsonFormat(serviceList))
+	fmt.Println(json.ToStringFormat(serviceList))
 }
 
 func TestGetAllInstances(t *testing.T) {
@@ -53,7 +53,7 @@ func TestGetAllInstances(t *testing.T) {
 	if err != nil {
 		println(err)
 	}
-	fmt.Println(json.ToJsonFormat(instances))
+	fmt.Println(json.ToStringFormat(instances))
 }
 
 func TestGetHealthyInstances(t *testing.T) {
@@ -63,7 +63,7 @@ func TestGetHealthyInstances(t *testing.T) {
 		if err != nil {
 			println(err)
 		}
-		fmt.Println(json.ToJsonFormat(instances))
+		fmt.Println(json.ToStringFormat(instances))
 		fmt.Println()
 		time.Sleep(time.Second * 3)
 	}
@@ -73,7 +73,7 @@ func TestChooseOneHealthyRandom(t *testing.T) {
 	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
 	for i := 1; i <= 30; i++ {
 		service, _ := nc.ChooseOneHealthyInstance("go")
-		fmt.Println(json.ToJsonFormat(service))
+		fmt.Println(json.ToStringFormat(service))
 		time.Sleep(time.Second)
 	}
 }
@@ -85,7 +85,7 @@ func TestWatchNaming(t *testing.T) {
 		if err != nil {
 			logger.Logrus().WithError(err).Errorln("watch naming error")
 		} else {
-			logger.Logrus().Traceln(json.ToJson(instance))
+			logger.Logrus().Traceln(json.ToString(instance))
 		}
 	})
 	go func() {
