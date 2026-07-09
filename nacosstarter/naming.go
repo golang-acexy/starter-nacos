@@ -1,8 +1,6 @@
 package nacosstarter
 
 import (
-	"errors"
-
 	"github.com/acexy/golang-toolkit/crypto/hashing"
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/acexy/golang-toolkit/math/conversion"
@@ -13,9 +11,12 @@ import (
 // Naming
 
 // Register 向注册中心注册临时实例
-// 一个NamingClient只能注册一个实例，重复注册将出现替换
+// 同一group、serviceName、ip、port生成的实例标识重复注册时，会覆盖本地注册记录。
 func (n *NamingClient) Register(instance Instance) (string, error) {
-	var err error
+	client, err := currentNamingInstance()
+	if err != nil {
+		return "", err
+	}
 	var flag bool
 	var id string
 	param := vo.RegisterInstanceParam{
@@ -29,20 +30,29 @@ func (n *NamingClient) Register(instance Instance) (string, error) {
 		GroupName:   n.group,
 		Ephemeral:   true,
 	}
-	flag, err = namingInstance.RegisterInstance(param)
-	if err == nil && flag {
-		logger.Logrus().Traceln("registered ip", param.Ip, "port", param.Port, "service", param.ServiceName)
-		id = hashing.Md5Hex(param.Ip + conversion.FromUint64(param.Port))
-		n.registered[id] = param
+	flag, err = client.RegisterInstance(param)
+	if err != nil {
+		return "", err
 	}
-	return id, err
+	if !flag {
+		return "", ErrRegisterInstanceFailed
+	}
+	logger.Logrus().Traceln("registered ip", param.Ip, "port", param.Port, "service", param.ServiceName)
+	id = buildInstanceIdentifier(param.GroupName, param.ServiceName, param.Ip, param.Port)
+	n.mu.Lock()
+	n.registered[id] = param
+	n.mu.Unlock()
+	return id, nil
 }
 
 func (n *NamingClient) RegisterBatch(serviceName string, instances []InstanceBatch) ([]string, error) {
-	if len(instances) == 0 {
-		return nil, errors.New("empty instance")
+	client, err := currentNamingInstance()
+	if err != nil {
+		return nil, err
 	}
-	var err error
+	if len(instances) == 0 {
+		return nil, ErrEmptyInstance
+	}
 	var flag bool
 	var param vo.BatchRegisterInstanceParam
 	var instanceParam []vo.RegisterInstanceParam
@@ -59,27 +69,38 @@ func (n *NamingClient) RegisterBatch(serviceName string, instances []InstanceBat
 			ServiceName: serviceName,
 			GroupName:   n.group,
 		})
-		ids = append(ids, hashing.Md5Hex(v.Ip+conversion.FromUint(v.Port)))
+		ids = append(ids, buildInstanceIdentifier(n.group, serviceName, v.Ip, uint64(v.Port)))
 	}
 	param.Instances = instanceParam
 	param.GroupName = n.group
 	param.ServiceName = serviceName
 
-	flag, err = namingInstance.BatchRegisterInstance(param)
-	if err == nil && flag {
-		for i, v := range ids {
-			n.registered[v] = instanceParam[i]
-		}
-		return ids, err
+	flag, err = client.BatchRegisterInstance(param)
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	if !flag {
+		return nil, ErrRegisterInstanceFailed
+	}
+	n.mu.Lock()
+	for i, v := range ids {
+		n.registered[v] = instanceParam[i]
+	}
+	n.mu.Unlock()
+	return ids, nil
 }
 
 // Unregister 向注册中心注销实例
 func (n *NamingClient) Unregister(instanceId string) (bool, error) {
+	client, err := currentNamingInstance()
+	if err != nil {
+		return false, err
+	}
+	n.mu.Lock()
 	v, ok := n.registered[instanceId]
+	n.mu.Unlock()
 	if !ok {
-		return false, errors.New("bad instanceId")
+		return false, ErrBadInstanceId
 	}
 	param := vo.DeregisterInstanceParam{
 		Ip:          v.Ip,
@@ -89,20 +110,51 @@ func (n *NamingClient) Unregister(instanceId string) (bool, error) {
 		GroupName:   v.GroupName,
 		Ephemeral:   v.Ephemeral,
 	}
-	flag, err := namingInstance.DeregisterInstance(param)
+	flag, err := client.DeregisterInstance(param)
 	if err != nil {
 		return false, err
 	}
 	if !flag {
 		return false, nil
 	}
+	n.mu.Lock()
+	delete(n.registered, instanceId)
+	n.mu.Unlock()
 	logger.Logrus().Traceln("unregistered ip", param.Ip, "port", param.Port, "service", param.ServiceName)
 	return true, nil
 }
 
+// snapshotNamingClients 返回当前所有NamingClient的快照，仅在Stop()关闭流程中调用。
+func snapshotNamingClients() []*NamingClient {
+	if nm == nil {
+		return nil
+	}
+	nm.namingLocker.Lock()
+	defer nm.namingLocker.Unlock()
+	clients := make([]*NamingClient, 0, len(nm.namingClient))
+	for _, namingClient := range nm.namingClient {
+		clients = append(clients, namingClient)
+	}
+	return clients
+}
+
+func (n *NamingClient) snapshotRegistered() map[string]vo.RegisterInstanceParam {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	registered := make(map[string]vo.RegisterInstanceParam, len(n.registered))
+	for id, instance := range n.registered {
+		registered[id] = instance
+	}
+	return registered
+}
+
 // GetService 获取指定服务的概要信息
 func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
-	return namingInstance.GetService(vo.GetServiceParam{
+	client, err := currentNamingInstance()
+	if err != nil {
+		return model.Service{}, err
+	}
+	return client.GetService(vo.GetServiceParam{
 		ServiceName: serviceName,
 		GroupName:   n.group,
 	})
@@ -110,7 +162,11 @@ func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
 
 // GetServicePage 获取指定服务的注册信息
 func (n *NamingClient) GetServicePage(pageNo, pageSize uint) (model.ServiceList, error) {
-	return namingInstance.GetAllServicesInfo(vo.GetAllServiceInfoParam{
+	client, err := currentNamingInstance()
+	if err != nil {
+		return model.ServiceList{}, err
+	}
+	return client.GetAllServicesInfo(vo.GetAllServiceInfoParam{
 		NameSpace: namespace,
 		GroupName: n.group,
 		PageNo:    uint32(pageNo),
@@ -120,66 +176,105 @@ func (n *NamingClient) GetServicePage(pageNo, pageSize uint) (model.ServiceList,
 
 // GetAllInstances 获取指定服务的所有实例(不论当前是否可用)
 func (n *NamingClient) GetAllInstances(serviceName string) ([]RegisteredInstance, error) {
-	instances, err := namingInstance.SelectAllInstances(vo.SelectAllInstancesParam{ServiceName: serviceName, GroupName: n.group})
+	client, err := currentNamingInstance()
+	if err != nil {
+		return nil, err
+	}
+	instances, err := client.SelectAllInstances(vo.SelectAllInstancesParam{ServiceName: serviceName, GroupName: n.group})
 	if err != nil {
 		return nil, err
 	}
 	var result []RegisteredInstance
 	for _, v := range instances {
-		result = append(result, RegisteredInstance{InstanceIdentifier: hashing.Md5Hex(v.Ip + conversion.FromUint64(v.Port)), Instance: v})
+		result = append(result, RegisteredInstance{InstanceIdentifier: buildInstanceIdentifier(n.group, serviceName, v.Ip, v.Port), Instance: v})
 	}
 	return result, nil
 }
 
 // GetHealthyInstances 获取指定服务的可用实例
 func (n *NamingClient) GetHealthyInstances(serviceName string) ([]RegisteredInstance, error) {
-	instances, err := namingInstance.SelectInstances(vo.SelectInstancesParam{ServiceName: serviceName, GroupName: n.group, HealthyOnly: true})
+	client, err := currentNamingInstance()
+	if err != nil {
+		return nil, err
+	}
+	instances, err := client.SelectInstances(vo.SelectInstancesParam{ServiceName: serviceName, GroupName: n.group, HealthyOnly: true})
 	if err != nil {
 		return nil, err
 	}
 	var result []RegisteredInstance
 	for _, v := range instances {
-		result = append(result, RegisteredInstance{InstanceIdentifier: hashing.Md5Hex(v.Ip + conversion.FromUint64(v.Port)), Instance: v})
+		result = append(result, RegisteredInstance{InstanceIdentifier: buildInstanceIdentifier(n.group, serviceName, v.Ip, v.Port), Instance: v})
 	}
 	return result, nil
 }
 
 // ChooseOneHealthyInstance 选择一个可用的实例
 func (n *NamingClient) ChooseOneHealthyInstance(serviceName string) (*RegisteredInstance, error) {
-	instance, err := namingInstance.SelectOneHealthyInstance(vo.SelectOneHealthInstanceParam{ServiceName: serviceName, GroupName: n.group})
+	client, err := currentNamingInstance()
 	if err != nil {
 		return nil, err
 	}
-	return &RegisteredInstance{InstanceIdentifier: hashing.Md5Hex(instance.Ip + conversion.FromUint64(instance.Port)), Instance: *instance}, nil
+	instance, err := client.SelectOneHealthyInstance(vo.SelectOneHealthInstanceParam{ServiceName: serviceName, GroupName: n.group})
+	if err != nil {
+		return nil, err
+	}
+	return &RegisteredInstance{InstanceIdentifier: buildInstanceIdentifier(n.group, serviceName, instance.Ip, instance.Port), Instance: *instance}, nil
 }
 
 // WatchNaming 监控服务的实例变化
 // * 如果UpdateCacheWhenEmpty=false 当前服务只有一个实例时，不会触发监听
 func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []model.Instance, err error)) (string, error) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	client, err := currentNamingInstance()
+	if err != nil {
+		return "", err
+	}
 	param := &vo.SubscribeParam{ServiceName: serviceName, GroupName: n.group}
-	watchId := hashing.Md5Hex(serviceName)
+	watchId := hashing.Md5Hex(serviceName + n.group)
+	n.mu.Lock()
 	_, ok := n.watched[watchId]
 	if ok {
-		return watchId, errors.New("duplicated watchId")
+		n.mu.Unlock()
+		return "", ErrDuplicatedNamingWatch
 	}
 	param.SubscribeCallback = watch
 	n.watched[watchId] = param
-	return watchId, namingInstance.Subscribe(param)
+	n.mu.Unlock()
+
+	err = client.Subscribe(param)
+	if err != nil {
+		n.mu.Lock()
+		if n.watched[watchId] == param {
+			delete(n.watched, watchId)
+		}
+		n.mu.Unlock()
+	}
+	return watchId, err
 }
 
 // UnwatchNaming 取消监控服务实例变化
 func (n *NamingClient) UnwatchNaming(watchId string) error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-	v, ok := n.watched[watchId]
-	if !ok {
-		return errors.New("bad watchId")
-	}
-	err := namingInstance.Unsubscribe(v)
+	client, err := currentNamingInstance()
 	if err != nil {
-		delete(n.watched, watchId)
+		return err
+	}
+	n.mu.Lock()
+	v, ok := n.watched[watchId]
+	n.mu.Unlock()
+	if !ok {
+		return ErrBadWatchId
+	}
+
+	err = client.Unsubscribe(v)
+	if err == nil {
+		n.mu.Lock()
+		if n.watched[watchId] == v {
+			delete(n.watched, watchId)
+		}
+		n.mu.Unlock()
 	}
 	return err
+}
+
+func buildInstanceIdentifier(group, serviceName, ip string, port uint64) string {
+	return hashing.Md5Hex(group + ":" + serviceName + ":" + ip + ":" + conversion.FromUint64(port))
 }
