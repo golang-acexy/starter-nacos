@@ -3,8 +3,8 @@ module github.com/golang-acexy/starter-nacos
 go 1.25.8
 
 require (
-	github.com/acexy/golang-toolkit v0.0.65-0.20260708022919-0acbe3b6386d
-	github.com/golang-acexy/starter-parent v0.1.23-0.20260713093351-c249c35849a4
+	github.com/acexy/golang-toolkit v1.25.0
+	github.com/golang-acexy/starter-parent v1.25.0
 	github.com/nacos-group/nacos-sdk-go/v2 v2.3.5
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -15,7 +15,7 @@ require (
 	github.com/alibabacloud-go/darabonba-array v0.1.0 // indirect
 	github.com/alibabacloud-go/darabonba-encode-util v0.0.2 // indirect
 	github.com/alibabacloud-go/darabonba-map v0.0.2 // indirect
-	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.3 // indirect
+	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.4 // indirect
 	github.com/alibabacloud-go/darabonba-signature-util v0.0.7 // indirect
 	github.com/alibabacloud-go/darabonba-string v1.0.2 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
@@ -48,9 +48,8 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.23.2 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.69.0 // indirect
+	github.com/prometheus/common v0.70.0 // indirect
 	github.com/prometheus/procfs v0.21.1 // indirect
-	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/tidwall/gjson v1.19.0 // indirect
 	github.com/tidwall/match v1.2.0 // indirect
@@ -65,8 +64,8 @@ require (
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260706201446-f0a921348800 // indirect
-	google.golang.org/grpc v1.82.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260715232425-e75dac1f907d // indirect
+	google.golang.org/grpc v1.82.1 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect

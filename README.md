@@ -2,6 +2,10 @@
 
 `starter-nacos` provides Nacos configuration and service discovery integration for the golang-acexy starter ecosystem. It is intended to be started and stopped by `starter-parent`.
 
+## Ecosystem Role
+
+This starter supplies shared configuration and naming clients. It can initialize application configuration before dependent components start and provides discovery data to integrations such as `starter-grpc` resolvers.
+
 ## Requirements
 
 - Go `1.25.8`
@@ -73,6 +77,8 @@ Instance identifiers are generated from `group`, `serviceName`, `ip`, and `port`
 This starter is process-singleton by design. `Start` initializes package-level Nacos clients, and `Stop` unregisters naming instances, closes the naming client, closes the config client, and clears global state.
 
 Old `ConfigClient` and `NamingClient` wrappers should not be reused after `Stop`; methods will return disabled-client errors once the raw clients are cleared.
+
+The standard Nacos starter does not allow parent-managed restart after successful shutdown.
 
 ## Testing
 

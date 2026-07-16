@@ -120,7 +120,7 @@ func (n *NacosStarter) Setting() *parent.Setting {
 	if n.NacosSetting != nil {
 		return n.NacosSetting
 	}
-	return parent.NewSetting("Nacos-Starter", 0, false, time.Second*30, nil)
+	return parent.NewSetting("Nacos-Starter", false, 0, false, time.Second*30, nil)
 }
 
 func (n *NacosStarter) Start() (any, error) {
