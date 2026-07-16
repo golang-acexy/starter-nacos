@@ -16,13 +16,13 @@ import (
 var loader *parent.StarterLoader
 
 type InitJsonConfig struct {
-	Name string `json:"name"`
+	Config string `json:"config"`
 }
 
 var initJsonConfig InitJsonConfig
 
 func init() {
-	loader = parent.NewStarterLoader([]parent.Starter{
+	loader = parent.InitStarterLoader([]parent.Starter{
 		&nacosstarter.NacosStarter{
 			Config: nacosstarter.NacosConfig{
 				ServerConfig: &nacosstarter.NacosServerConfig{Services: []constant.ServerConfig{
@@ -40,9 +40,9 @@ func init() {
 					},
 				},
 				InitConfigSettings: &nacosstarter.InitConfigSettings{
-					GroupName: "TEST",
+					//GroupName: "DEFAULT_GROUP",
 					ConfigSetting: []*nacosstarter.ConfigFileSetting{
-						{DataId: "json.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: &initJsonConfig},
+						{DataId: "config.json", Type: nacosstarter.ConfigTypeJson, Watch: true, Value: &initJsonConfig},
 					},
 				},
 			},
@@ -68,6 +68,11 @@ func TestGetConfig(t *testing.T) {
 			}
 		}
 	}()
+
+	c, _ := nacosstarter.GetConfigClient("")
+	_, _ = c.WatchConfig("config.yml", func(namespace, group, dataId, data string) {
+		fmt.Println(data)
+	})
 	sys.ShutdownCallback(func() {
 		done <- struct{}{}
 	})

@@ -37,7 +37,7 @@ func TestConfig(t *testing.T) {
 	var j []JsonConfig
 	_ = cc.GetConfig("flow-rule.json", nacosstarter.ConfigTypeJson, &j)
 	fmt.Printf("flow-rule.json %+v\n", j)
-	_, _ = loader.StopBySetting()
+	_, _ = loader.StopAllBySetting()
 }
 
 func TestWatch(t *testing.T) {

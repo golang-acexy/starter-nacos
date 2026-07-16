@@ -12,9 +12,11 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/model"
 )
 
+const serviceName = "go-service"
+
 func TestRegister(t *testing.T) {
 	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
-	_, err := nc.Register(nacosstarter.Instance{Ip: "127.0.0.1", ServiceName: "go", Port: 8081, Weight: 1})
+	_, err := nc.Register(nacosstarter.Instance{Ip: "127.0.0.1", ServiceName: serviceName, Port: 8081, Weight: 1})
 	if err != nil {
 		fmt.Printf("%+v\n", err)
 	}
@@ -23,7 +25,7 @@ func TestRegister(t *testing.T) {
 
 func TestRegisterBatch(t *testing.T) {
 	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
-	_, err := nc.RegisterBatch("go", []nacosstarter.InstanceBatch{
+	_, err := nc.RegisterBatch(serviceName, []nacosstarter.InstanceBatch{
 		{Ip: "127.0.0.1", Port: 8082, Weight: 1},
 		{Ip: "127.0.0.1", Port: 8083, Weight: 1},
 	})
@@ -35,7 +37,7 @@ func TestRegisterBatch(t *testing.T) {
 
 func TestGetService(t *testing.T) {
 	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
-	service, err := nc.GetService("go")
+	service, err := nc.GetService(serviceName)
 	if err != nil {
 		println(err)
 	}
@@ -48,8 +50,8 @@ func TestGetService(t *testing.T) {
 }
 
 func TestGetAllInstances(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("TEST")
-	instances, err := nc.GetAllInstances("go")
+	nc, _ := nacosstarter.GetNamingClient("")
+	instances, err := nc.GetAllInstances(serviceName)
 	if err != nil {
 		println(err)
 	}
@@ -57,9 +59,9 @@ func TestGetAllInstances(t *testing.T) {
 }
 
 func TestGetHealthyInstances(t *testing.T) {
-	nc, _ := nacosstarter.GetNamingClient("TEST")
+	nc, _ := nacosstarter.GetNamingClient("")
 	for i := 1; i <= 10; i++ {
-		instances, err := nc.GetHealthyInstances("go")
+		instances, err := nc.GetHealthyInstances(serviceName)
 		if err != nil {
 			println(err)
 		}
@@ -72,7 +74,7 @@ func TestGetHealthyInstances(t *testing.T) {
 func TestChooseOneHealthyRandom(t *testing.T) {
 	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
 	for i := 1; i <= 30; i++ {
-		service, _ := nc.ChooseOneHealthyInstance("go")
+		service, _ := nc.ChooseOneHealthyInstance(serviceName)
 		fmt.Println(json.ToStringFormat(service))
 		time.Sleep(time.Second)
 	}
@@ -80,12 +82,12 @@ func TestChooseOneHealthyRandom(t *testing.T) {
 
 func TestWatchNaming(t *testing.T) {
 	nc, _ := nacosstarter.GetNamingClient("DEFAULT_GROUP")
-	watchId, _ := nc.WatchNaming("go", func(instance []model.Instance, err error) {
+	watchId, _ := nc.WatchNaming(serviceName, func(instance []model.Instance, err error) {
 		logger.Logrus().Println("changed")
 		if err != nil {
 			logger.Logrus().WithError(err).Errorln("watch naming error")
 		} else {
-			logger.Logrus().Traceln(json.ToString(instance))
+			logger.Logrus().Debugln(json.ToString(instance))
 		}
 	})
 	go func() {
