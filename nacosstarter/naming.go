@@ -125,14 +125,14 @@ func (n *NamingClient) Unregister(instanceId string) (bool, error) {
 }
 
 // snapshotNamingClients 返回当前所有NamingClient的快照，仅在Stop()关闭流程中调用。
-func snapshotNamingClients() []*NamingClient {
-	if nm == nil {
+func snapshotNamingClients(manager *nacosManager) []*NamingClient {
+	if manager == nil {
 		return nil
 	}
-	nm.namingLocker.Lock()
-	defer nm.namingLocker.Unlock()
-	clients := make([]*NamingClient, 0, len(nm.namingClient))
-	for _, namingClient := range nm.namingClient {
+	manager.namingLocker.Lock()
+	defer manager.namingLocker.Unlock()
+	clients := make([]*NamingClient, 0, len(manager.namingClient))
+	for _, namingClient := range manager.namingClient {
 		clients = append(clients, namingClient)
 	}
 	return clients
@@ -162,12 +162,12 @@ func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
 
 // GetServicePage 获取指定服务的注册信息
 func (n *NamingClient) GetServicePage(pageNo, pageSize uint) (model.ServiceList, error) {
-	client, err := currentNamingInstance()
-	if err != nil {
-		return model.ServiceList{}, err
+	runtime := nacosRuntimeState.Load()
+	if runtime == nil || runtime.naming == nil {
+		return model.ServiceList{}, ErrDisabledDiscoveryClient
 	}
-	return client.GetAllServicesInfo(vo.GetAllServiceInfoParam{
-		NameSpace: namespace,
+	return runtime.naming.GetAllServicesInfo(vo.GetAllServiceInfoParam{
+		NameSpace: runtime.namespace,
 		GroupName: n.group,
 		PageNo:    uint32(pageNo),
 		PageSize:  uint32(pageSize),

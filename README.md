@@ -8,7 +8,7 @@ This starter supplies shared configuration and naming clients. It can initialize
 
 ## Requirements
 
-- Go `1.25.8`
+- Go `1.26.7`
 - Nacos server, for example `localhost:8848`
 - `github.com/golang-acexy/starter-parent`
 
@@ -74,7 +74,7 @@ Instance identifiers are generated from `group`, `serviceName`, `ip`, and `port`
 
 ## Lifecycle Notes
 
-This starter is process-singleton by design. `Start` initializes package-level Nacos clients, and `Stop` unregisters naming instances, closes the naming client, closes the config client, and clears global state.
+This starter is process-singleton by design. `Start` atomically publishes one immutable runtime snapshot containing the config client, naming client, namespace, and managed wrappers. `Stop` first removes that snapshot, then unregisters naming instances and closes the SDK clients through its local snapshot.
 
 Old `ConfigClient` and `NamingClient` wrappers should not be reused after `Stop`; methods will return disabled-client errors once the raw clients are cleared.
 
@@ -82,4 +82,14 @@ The standard Nacos starter does not allow parent-managed restart after successfu
 
 ## Testing
 
-The current tests are integration-oriented and expect a local Nacos server, usually `localhost:8848` with `nacos/nacos`. Some tests block for manual observation, so run them selectively.
+Default tests are deterministic package-level unit tests and do not require Nacos:
+
+```bash
+go test ./...
+```
+
+Tests under `test/` are integration-oriented, use the `integration` build tag, and expect a local Nacos server. Some tests block for manual observation, so run them selectively:
+
+```bash
+go test -tags=integration ./test -run TestName
+```
