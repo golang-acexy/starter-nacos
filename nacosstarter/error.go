@@ -10,6 +10,7 @@ var (
 	ErrConfigAndDiscoveryDisabled  = errors.New("config and discover modules are disabled")
 	ErrBadNacosConfig              = errors.New("bad nacos config")
 	ErrNacosStarterAlreadyStarted  = errors.New("nacos starter already started")
+	ErrNacosStarterNotStarted      = errors.New("nacos starter not started")
 	ErrNacosStopTimeout            = errors.New("nacos starter stop timeout")
 	ErrDuplicatedConfigWatch       = errors.New("duplicated config watch")
 	ErrBadWatchId                  = errors.New("bad watchId")

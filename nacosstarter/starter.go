@@ -3,6 +3,8 @@ package nacosstarter
 import (
 	"fmt"
 	"reflect"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/acexy/golang-toolkit/logger"
@@ -15,11 +17,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// 以下包级变量由 Start() 初始化、Stop() 清理，生命周期由 StarterLoader 串行化保证，无需额外同步。
-var configInstance config_client.IConfigClient
-var namingInstance naming_client.INamingClient
-var nm *nacosManager
-var namespace string
+var nacosRuntimeState atomic.Pointer[nacosRuntime]
+var nacosLifecycleLock sync.Mutex
+var nacosState nacosLifecycleState
+
+type nacosRuntime struct {
+	config    config_client.IConfigClient
+	naming    naming_client.INamingClient
+	manager   *nacosManager
+	namespace string
+}
+
+type nacosLifecycleState uint8
+
+const (
+	nacosStopped nacosLifecycleState = iota
+	nacosStarting
+	nacosRunning
+	nacosStopping
+)
 
 func deserializeConfig(content string, configType ConfigType, value any) error {
 	switch configType {
@@ -45,54 +61,58 @@ func deserializeConfig(content string, configType ConfigType, value any) error {
 
 // GetConfigClient 获取指定group的配置客户端，group不存在时自动创建。
 func GetConfigClient(group string) (*ConfigClient, error) {
-	if configInstance == nil || nm == nil {
+	runtime := nacosRuntimeState.Load()
+	if runtime == nil || runtime.config == nil || runtime.manager == nil {
 		return nil, ErrDisabledConfigClient
 	}
 	if group == "" {
 		group = DefaultGroup
 	}
-	nm.configLocker.Lock()
-	defer nm.configLocker.Unlock()
-	v, ok := nm.configClient[group]
+	runtime.manager.configLocker.Lock()
+	defer runtime.manager.configLocker.Unlock()
+	v, ok := runtime.manager.configClient[group]
 	if ok {
 		return v, nil
 	}
 	v = &ConfigClient{group: group, watched: make(map[string]*vo.ConfigParam)}
-	nm.configClient[group] = v
+	runtime.manager.configClient[group] = v
 	return v, nil
 }
 
 // GetNamingClient 获取指定group的服务发现客户端，group不存在时自动创建。
 func GetNamingClient(group string) (*NamingClient, error) {
-	if namingInstance == nil || nm == nil {
+	runtime := nacosRuntimeState.Load()
+	if runtime == nil || runtime.naming == nil || runtime.manager == nil {
 		return nil, ErrDisabledDiscoveryClient
 	}
 	if group == "" {
 		group = DefaultGroup
 	}
-	nm.namingLocker.Lock()
-	defer nm.namingLocker.Unlock()
-	v, ok := nm.namingClient[group]
+	runtime.manager.namingLocker.Lock()
+	defer runtime.manager.namingLocker.Unlock()
+	v, ok := runtime.manager.namingClient[group]
 	if ok {
 		return v, nil
 	}
 	v = &NamingClient{group: group, registered: make(map[string]vo.RegisterInstanceParam), watched: make(map[string]*vo.SubscribeParam)}
-	nm.namingClient[group] = v
+	runtime.manager.namingClient[group] = v
 	return v, nil
 }
 
 func currentConfigInstance() (config_client.IConfigClient, error) {
-	if configInstance == nil {
+	runtime := nacosRuntimeState.Load()
+	if runtime == nil || runtime.config == nil {
 		return nil, ErrDisabledConfigClient
 	}
-	return configInstance, nil
+	return runtime.config, nil
 }
 
 func currentNamingInstance() (naming_client.INamingClient, error) {
-	if namingInstance == nil {
+	runtime := nacosRuntimeState.Load()
+	if runtime == nil || runtime.naming == nil {
 		return nil, ErrDisabledDiscoveryClient
 	}
-	return namingInstance, nil
+	return runtime.naming, nil
 }
 
 type NacosStarter struct {
@@ -132,37 +152,38 @@ func (n *NacosStarter) Start() (any, error) {
 	if config.ServerConfig == nil || config.ClientConfig == nil || config.ClientConfig.ClientConfig == nil || len(config.ServerConfig.Services) == 0 {
 		return nil, ErrBadNacosConfig
 	}
-	if nm != nil {
+	nacosLifecycleLock.Lock()
+	if nacosState != nacosStopped {
+		nacosLifecycleLock.Unlock()
 		return nil, ErrNacosStarterAlreadyStarted
 	}
+	nacosState = nacosStarting
+	nacosLifecycleLock.Unlock()
+	started := false
+	defer func() {
+		if !started {
+			nacosLifecycleLock.Lock()
+			nacosState = nacosStopped
+			nacosLifecycleLock.Unlock()
+		}
+	}()
 
-	nm = &nacosManager{configClient: make(map[string]*ConfigClient), namingClient: make(map[string]*NamingClient)}
+	manager := &nacosManager{configClient: make(map[string]*ConfigClient), namingClient: make(map[string]*NamingClient)}
 	if config.ClientConfig.ClientConfig.NamespaceId == "public" {
 		config.ClientConfig.ClientConfig.NamespaceId = ""
 	}
-	namespace = config.ClientConfig.NamespaceId
+	namespace := config.ClientConfig.NamespaceId
+	var configClient config_client.IConfigClient
+	var namingClient naming_client.INamingClient
 	if !config.DisableConfig {
 		cc, err := clients.NewConfigClient(vo.NacosClientParam{
 			ServerConfigs: config.ServerConfig.Services,
 			ClientConfig:  config.ClientConfig.ClientConfig,
 		})
 		if err != nil {
-			closeAndClearNacosState()
 			return nil, err
 		}
-		configInstance = cc
-		if config.InitConfigSettings != nil && len(config.InitConfigSettings.ConfigSetting) > 0 {
-			groupName := config.InitConfigSettings.GroupName
-			if groupName == "" {
-				groupName = DefaultGroup
-			}
-			client, err := GetConfigClient(groupName)
-			if err != nil {
-				logger.Logrus().WithError(err).Errorln("GetConfigClient failed for InitConfigSettings")
-			} else {
-				client.LoadAndWatchConfig(config.InitConfigSettings.ConfigSetting)
-			}
-		}
+		configClient = cc
 	}
 	if !config.DisableDiscovery {
 		nc, err := clients.NewNamingClient(
@@ -172,13 +193,32 @@ func (n *NacosStarter) Start() (any, error) {
 			},
 		)
 		if err != nil {
-			closeAndClearNacosState()
+			if configClient != nil {
+				configClient.CloseClient()
+			}
 			return nil, err
 		}
-		namingInstance = nc
+		namingClient = nc
 	}
-	configClient := configInstance
-	namingClient := namingInstance
+	runtime := &nacosRuntime{config: configClient, naming: namingClient, manager: manager, namespace: namespace}
+	nacosLifecycleLock.Lock()
+	nacosRuntimeState.Store(runtime)
+	nacosState = nacosRunning
+	nacosLifecycleLock.Unlock()
+	started = true
+
+	if config.InitConfigSettings != nil && len(config.InitConfigSettings.ConfigSetting) > 0 {
+		groupName := config.InitConfigSettings.GroupName
+		if groupName == "" {
+			groupName = DefaultGroup
+		}
+		client, err := GetConfigClient(groupName)
+		if err != nil {
+			logger.Logrus().WithError(err).Errorln("GetConfigClient failed for InitConfigSettings")
+		} else {
+			client.LoadAndWatchConfig(config.InitConfigSettings.ConfigSetting)
+		}
+	}
 	if config.InitFunc != nil {
 		config.InitFunc(configClient, namingClient)
 	}
@@ -186,66 +226,79 @@ func (n *NacosStarter) Start() (any, error) {
 }
 
 func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool, err error) {
-	configClient := configInstance
-	rawNamingClient := namingInstance
+	nacosLifecycleLock.Lock()
+	runtime := nacosRuntimeState.Load()
+	if nacosState != nacosRunning || runtime == nil {
+		nacosLifecycleLock.Unlock()
+		return false, true, ErrNacosStarterNotStarted
+	}
+	nacosRuntimeState.Store(nil)
+	nacosState = nacosStopping
+	nacosLifecycleLock.Unlock()
 
-	if rawNamingClient != nil {
-		done := make(chan struct{}, 1)
-		go func() {
-			for _, managedNamingClient := range snapshotNamingClients() {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			nacosLifecycleLock.Lock()
+			nacosState = nacosStopped
+			nacosLifecycleLock.Unlock()
+		}()
+		if runtime.naming != nil {
+			for _, managedNamingClient := range snapshotNamingClients(runtime.manager) {
 				for id, instance := range managedNamingClient.snapshotRegistered() {
-					flag, err := managedNamingClient.Unregister(id)
+					flag, err := runtime.naming.DeregisterInstance(vo.DeregisterInstanceParam{
+						Ip:          instance.Ip,
+						Port:        instance.Port,
+						Cluster:     instance.ClusterName,
+						ServiceName: instance.ServiceName,
+						GroupName:   instance.GroupName,
+						Ephemeral:   instance.Ephemeral,
+					})
 					if err != nil {
 						logger.Logrus().WithError(err).Error("unregister instance failed ip:", instance.Ip, "port:", instance.Port)
 					} else {
+						if flag {
+							managedNamingClient.mu.Lock()
+							delete(managedNamingClient.registered, id)
+							managedNamingClient.mu.Unlock()
+						}
 						logger.Logrus().Traceln("unregister instance ip:", instance.Ip, "port:", instance.Port, "result:", flag)
 					}
 				}
 			}
-			rawNamingClient.CloseClient()
-			done <- struct{}{}
-		}()
-		select {
-		case <-done:
-			if configClient != nil {
-				configClient.CloseClient()
-			}
-			clearNacosState()
-			return true, true, nil
-		case <-time.After(maxWaitTime):
-			return false, false, ErrNacosStopTimeout
+			runtime.naming.CloseClient()
 		}
+		if runtime.config != nil {
+			runtime.config.CloseClient()
+		}
+	}()
+
+	timer := time.NewTimer(maxWaitTime)
+	defer timer.Stop()
+	select {
+	case <-done:
+		gracefully = true
+	case <-timer.C:
+		err = ErrNacosStopTimeout
 	}
-	if configClient != nil {
-		configClient.CloseClient()
-	}
-	clearNacosState()
-	return true, true, nil
+	return gracefully, true, err
 }
 
 // RawConfigInstance 返回底层Nacos配置客户端，供需要直接操作SDK的集成代码使用。
 func RawConfigInstance() config_client.IConfigClient {
-	return configInstance
+	runtime := nacosRuntimeState.Load()
+	if runtime == nil {
+		return nil
+	}
+	return runtime.config
 }
 
 // RawNamingInstance 返回底层Nacos服务发现客户端，供需要直接操作SDK的集成代码使用。
 func RawNamingInstance() naming_client.INamingClient {
-	return namingInstance
-}
-
-func clearNacosState() {
-	configInstance = nil
-	namingInstance = nil
-	nm = nil
-	namespace = ""
-}
-
-func closeAndClearNacosState() {
-	if configInstance != nil {
-		configInstance.CloseClient()
+	runtime := nacosRuntimeState.Load()
+	if runtime == nil {
+		return nil
 	}
-	if namingInstance != nil {
-		namingInstance.CloseClient()
-	}
-	clearNacosState()
+	return runtime.naming
 }
