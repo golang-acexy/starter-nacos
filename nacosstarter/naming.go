@@ -1,6 +1,8 @@
 package nacosstarter
 
 import (
+	"errors"
+
 	"github.com/acexy/golang-toolkit/crypto/hashing"
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/acexy/golang-toolkit/math/conversion"
@@ -8,10 +10,8 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 )
 
-// Naming
-
-// Register 向注册中心注册临时实例
-// 同一group、serviceName、ip、port生成的实例标识重复注册时，会覆盖本地注册记录。
+// Register registers an enabled, healthy ephemeral instance in this group.
+// Repeated identities overwrite local tracking; metadata must not be mutated during SDK use.
 func (n *NamingClient) Register(instance Instance) (string, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -45,6 +45,8 @@ func (n *NamingClient) Register(instance Instance) (string, error) {
 	return id, nil
 }
 
+// RegisterBatch registers a nonempty batch of ephemeral instances for one service.
+// Remote failures are not transactional; metadata must not be mutated during SDK use.
 func (n *NamingClient) RegisterBatch(serviceName string, instances []InstanceBatch) ([]string, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -90,7 +92,7 @@ func (n *NamingClient) RegisterBatch(serviceName string, instances []InstanceBat
 	return ids, nil
 }
 
-// Unregister 向注册中心注销实例
+// Unregister removes a locally tracked registration; failures retain the entry for retry.
 func (n *NamingClient) Unregister(instanceId string) (bool, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -124,7 +126,7 @@ func (n *NamingClient) Unregister(instanceId string) (bool, error) {
 	return true, nil
 }
 
-// snapshotNamingClients 返回当前所有NamingClient的快照，仅在Stop()关闭流程中调用。
+// snapshotNamingClients snapshots group wrappers for shutdown cleanup.
 func snapshotNamingClients(manager *nacosManager) []*NamingClient {
 	if manager == nil {
 		return nil
@@ -148,7 +150,7 @@ func (n *NamingClient) snapshotRegistered() map[string]vo.RegisterInstanceParam 
 	return registered
 }
 
-// GetService 获取指定服务的概要信息
+// GetService reads service metadata in this group using the running naming client.
 func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -160,7 +162,7 @@ func (n *NamingClient) GetService(serviceName string) (model.Service, error) {
 	})
 }
 
-// GetServicePage 获取指定服务的注册信息
+// GetServicePage lists services in this namespace and group. Page values are converted to uint32.
 func (n *NamingClient) GetServicePage(pageNo, pageSize uint) (model.ServiceList, error) {
 	runtime := nacosRuntimeState.Load()
 	if runtime == nil || runtime.naming == nil {
@@ -174,7 +176,8 @@ func (n *NamingClient) GetServicePage(pageNo, pageSize uint) (model.ServiceList,
 	})
 }
 
-// GetAllInstances 获取指定服务的所有实例(不论当前是否可用)
+// GetAllInstances lists instances regardless of health, enablement, or weight. Empty results may be nil.
+// Query identifiers are not proof of local registration and may not be accepted by Unregister.
 func (n *NamingClient) GetAllInstances(serviceName string) ([]RegisteredInstance, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -191,7 +194,7 @@ func (n *NamingClient) GetAllInstances(serviceName string) ([]RegisteredInstance
 	return result, nil
 }
 
-// GetHealthyInstances 获取指定服务的可用实例
+// GetHealthyInstances lists healthy, enabled instances with positive weight; an empty result may be nil.
 func (n *NamingClient) GetHealthyInstances(serviceName string) ([]RegisteredInstance, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -208,7 +211,8 @@ func (n *NamingClient) GetHealthyInstances(serviceName string) ([]RegisteredInst
 	return result, nil
 }
 
-// ChooseOneHealthyInstance 选择一个可用的实例
+// ChooseOneHealthyInstance selects a healthy, enabled instance with positive weight using SDK balancing.
+// The SDK returns an error when no eligible instance exists.
 func (n *NamingClient) ChooseOneHealthyInstance(serviceName string) (*RegisteredInstance, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -221,8 +225,10 @@ func (n *NamingClient) ChooseOneHealthyInstance(serviceName string) (*Registered
 	return &RegisteredInstance{InstanceIdentifier: buildInstanceIdentifier(n.group, serviceName, instance.Ip, instance.Port), Instance: *instance}, nil
 }
 
-// WatchNaming 监控服务的实例变化
-// * 如果UpdateCacheWhenEmpty=false 当前服务只有一个实例时，不会触发监听
+// WatchNaming subscribes once per service in this group; watch must be nonnil.
+// Callbacks run through the SDK; callers must synchronize shared state.
+// UpdateCacheWhenEmpty=false suppresses empty-instance updates, not single-instance updates.
+// On subscription and cleanup failure, the returned ID remains tracked for UnwatchNaming retry.
 func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []model.Instance, err error)) (string, error) {
 	client, err := currentNamingInstance()
 	if err != nil {
@@ -242,6 +248,11 @@ func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []mod
 
 	err = client.Subscribe(param)
 	if err != nil {
+		// The SDK registers the callback before the remote subscription attempt.
+		if cleanupErr := client.Unsubscribe(param); cleanupErr != nil {
+			// Retain the ID so callers can retry cleanup through UnwatchNaming.
+			return watchId, errors.Join(err, cleanupErr)
+		}
 		n.mu.Lock()
 		if n.watched[watchId] == param {
 			delete(n.watched, watchId)
@@ -251,7 +262,8 @@ func (n *NamingClient) WatchNaming(serviceName string, watch func(instance []mod
 	return watchId, err
 }
 
-// UnwatchNaming 取消监控服务实例变化
+// UnwatchNaming cancels a tracked subscription; failures retain the ID for retry.
+// Already dispatched callbacks may still run after cancellation.
 func (n *NamingClient) UnwatchNaming(watchId string) error {
 	client, err := currentNamingInstance()
 	if err != nil {

@@ -40,7 +40,7 @@ const (
 func deserializeConfig(content string, configType ConfigType, value any) error {
 	switch configType {
 	case ConfigTypeYaml:
-		// 确保value是指针
+		// Decode into a fresh value so failed YAML decoding leaves the target unchanged.
 		rv := reflect.ValueOf(value)
 		if rv.Kind() != reflect.Ptr || rv.IsNil() {
 			return ErrValueMustBeNonNilPointer
@@ -59,7 +59,8 @@ func deserializeConfig(content string, configType ConfigType, value any) error {
 	return fmt.Errorf("%w: %s", ErrUnknownConfigType, configType)
 }
 
-// GetConfigClient 获取指定group的配置客户端，group不存在时自动创建。
+// GetConfigClient returns a cached group wrapper; an empty group means DefaultGroup.
+// It returns ErrDisabledConfigClient when the capability is unavailable.
 func GetConfigClient(group string) (*ConfigClient, error) {
 	runtime := nacosRuntimeState.Load()
 	if runtime == nil || runtime.config == nil || runtime.manager == nil {
@@ -79,7 +80,8 @@ func GetConfigClient(group string) (*ConfigClient, error) {
 	return v, nil
 }
 
-// GetNamingClient 获取指定group的服务发现客户端，group不存在时自动创建。
+// GetNamingClient returns a cached group wrapper; an empty group means DefaultGroup.
+// It returns ErrDisabledDiscoveryClient when the capability is unavailable.
 func GetNamingClient(group string) (*NamingClient, error) {
 	runtime := nacosRuntimeState.Load()
 	if runtime == nil || runtime.naming == nil || runtime.manager == nil {
@@ -115,12 +117,18 @@ func currentNamingInstance() (naming_client.INamingClient, error) {
 	return runtime.naming, nil
 }
 
+// NacosStarter owns process-wide SDK clients under the parent lifecycle.
+// Configuration resolution and lifecycle calls on this instance require external sequencing.
 type NacosStarter struct {
-	Config     NacosConfig
+	// Config is used when LazyConfig is nil; the resolved value is cached.
+	Config NacosConfig
+	// LazyConfig takes precedence over Config and is evaluated on first configuration access.
 	LazyConfig func() NacosConfig
 
-	config       *NacosConfig
+	// NacosSetting overrides default parent lifecycle settings when nonnil.
 	NacosSetting *parent.Setting
+
+	config *NacosConfig
 }
 
 func (n *NacosStarter) getConfig() *NacosConfig {
@@ -136,6 +144,7 @@ func (n *NacosStarter) getConfig() *NacosConfig {
 	return n.config
 }
 
+// Setting returns an override or defaults: no restart, priority zero, and a 30-second startup wait.
 func (n *NacosStarter) Setting() *parent.Setting {
 	if n.NacosSetting != nil {
 		return n.NacosSetting
@@ -143,6 +152,9 @@ func (n *NacosStarter) Setting() *parent.Setting {
 	return parent.NewSetting("Nacos-Starter", false, 0, false, time.Second*30, nil)
 }
 
+// Start initializes enabled SDK clients and runs configuration loading before InitFunc.
+// It returns nil on success, not an SDK resource; initial file failures do not fail startup.
+// Configuration is cached and the shared SDK NamespaceId "public" is normalized in place.
 func (n *NacosStarter) Start() (any, error) {
 	config := n.getConfig()
 
@@ -225,6 +237,9 @@ func (n *NacosStarter) Start() (any, error) {
 	return nil, nil
 }
 
+// Stop withdraws the clients, deregisters tracked instances, and closes SDK resources.
+// Timeout reports stopped=true while cleanup continues; deregistration errors are only logged.
+// Callers must stop client operations before shutdown; retained wrappers must not be reused.
 func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool, err error) {
 	nacosLifecycleLock.Lock()
 	runtime := nacosRuntimeState.Load()
@@ -285,7 +300,8 @@ func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool
 	return gracefully, true, err
 }
 
-// RawConfigInstance 返回底层Nacos配置客户端，供需要直接操作SDK的集成代码使用。
+// RawConfigInstance returns the shared SDK client or nil when unavailable.
+// The starter owns its closure; direct SDK subscriptions bypass wrapper bookkeeping.
 func RawConfigInstance() config_client.IConfigClient {
 	runtime := nacosRuntimeState.Load()
 	if runtime == nil {
@@ -294,7 +310,8 @@ func RawConfigInstance() config_client.IConfigClient {
 	return runtime.config
 }
 
-// RawNamingInstance 返回底层Nacos服务发现客户端，供需要直接操作SDK的集成代码使用。
+// RawNamingInstance returns the shared SDK client or nil when unavailable.
+// The starter owns its closure; direct SDK registrations bypass wrapper bookkeeping.
 func RawNamingInstance() naming_client.INamingClient {
 	runtime := nacosRuntimeState.Load()
 	if runtime == nil {

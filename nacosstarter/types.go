@@ -10,27 +10,30 @@ import (
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 )
 
-// Nacos默认分组名称
+// DefaultGroup is used when a client accessor receives an empty group.
 const DefaultGroup = "DEFAULT_GROUP"
 
-// nacosManager 针对多group的nacos实例管理器
+// nacosManager caches independently synchronized group wrappers.
 type nacosManager struct {
 	configLocker sync.Mutex
 	namingLocker sync.Mutex
 
-	// key = groupName
 	configClient map[string]*ConfigClient
 	namingClient map[string]*NamingClient
 }
 
-// ConfigClient Nacos配置客户端封装
+// ConfigClient manages configuration subscriptions for one group.
+// Obtain it through GetConfigClient; do not reuse it across starter lifetimes.
+// Bookkeeping is synchronized, but callbacks and caller-owned values need caller synchronization.
 type ConfigClient struct {
 	mu      sync.Mutex
 	group   string
 	watched map[string]*vo.ConfigParam
 }
 
-// NamingClient Nacos服务发现客户端封装
+// NamingClient manages registrations and subscriptions for one group.
+// Obtain it through GetNamingClient; do not reuse it across starter lifetimes.
+// Bookkeeping is synchronized; callers must coordinate operations on the same registration or watch.
 type NamingClient struct {
 	mu         sync.Mutex
 	group      string
@@ -38,70 +41,88 @@ type NamingClient struct {
 	watched    map[string]*vo.SubscribeParam
 }
 
-// Instance 服务实例注册参数
+// Instance describes an ephemeral registration in the SDK's default cluster.
 type Instance struct {
-	Ip          string
+	// Ip is the advertised address.
+	Ip string
+	// ServiceName identifies the service within the client's group.
 	ServiceName string
-	Port        uint
-	Weight      uint
-	Metadata    map[string]string
-}
-
-// InstanceBatch 批量服务实例注册参数
-type InstanceBatch struct {
-	Ip       string
-	Port     uint
-	Weight   uint
+	// Port is the advertised service port.
+	Port uint
+	// Weight is forwarded unchanged; zero excludes the instance from healthy selection.
+	Weight uint
+	// Metadata is passed to the SDK without copying; do not mutate it during SDK use.
 	Metadata map[string]string
 }
 
-// RegisteredInstance 已注册的服务实例信息
+// InstanceBatch describes an instance in a service-specific ephemeral batch.
+type InstanceBatch struct {
+	// Ip is the advertised address.
+	Ip string
+	// Port is the advertised service port.
+	Port uint
+	// Weight is forwarded unchanged; zero excludes the instance from healthy selection.
+	Weight uint
+	// Metadata is passed to the SDK without copying; do not mutate it during SDK use.
+	Metadata map[string]string
+}
+
+// RegisteredInstance pairs discovered SDK data with a group/service/address identifier.
+// Discovery does not add the instance to this wrapper's local registration registry.
 type RegisteredInstance struct {
-	Instance           model.Instance
+	// Instance contains the SDK result; nested maps are not copied by this wrapper.
+	Instance model.Instance
+	// InstanceIdentifier identifies the group, service, IP, and port.
 	InstanceIdentifier string
 }
 
-// NacosServerConfig Nacos服务端配置
+// NacosServerConfig supplies at least one SDK server endpoint.
 type NacosServerConfig struct {
+	// Services lists server endpoints passed to both enabled clients.
 	Services []constant.ServerConfig
 }
 
-// NacosClientConfig Nacos客户端配置
+// NacosClientConfig wraps shared SDK settings; keep them stable during starter use.
 type NacosClientConfig struct {
+	// ClientConfig must be nonnil; startup normalizes NamespaceId "public" to "" in place.
 	*constant.ClientConfig
 }
 
-// ConfigFileSetting 配置文件设置
+// ConfigFileSetting describes one best-effort configuration load and optional watch.
+// Keep the setting and destination stable while the watch is active.
 type ConfigFileSetting struct {
+	// DataId identifies the remote configuration file.
 	DataId string
-	Type   ConfigType
-	Watch  bool
-	Value  any
+	// Type selects JSON or YAML decoding.
+	Type ConfigType
+	// Watch enables subsequent updates even when the initial load fails.
+	Watch bool
+	// Value must be a nonnil destination pointer; external access requires caller synchronization.
+	Value any
 }
 
-// InitConfigSettings 初始化配置设置
+// InitConfigSettings supplies nonnil file settings loaded before InitFunc.
 type InitConfigSettings struct {
+	// ConfigSetting lists files; individual failures do not abort startup.
 	ConfigSetting []*ConfigFileSetting
-	GroupName     string
+	// GroupName defaults to DefaultGroup when empty.
+	GroupName string
 }
 
-// NacosConfig Nacos完整配置
+// NacosConfig configures enabled capabilities and startup initialization.
 type NacosConfig struct {
+	// ServerConfig must contain at least one server endpoint.
 	ServerConfig *NacosServerConfig
+	// ClientConfig and its embedded SDK configuration must be nonnil.
 	ClientConfig *NacosClientConfig
 
-	// DisableConfig 禁用配置功能
+	// DisableConfig prevents creation of the configuration client.
 	DisableConfig bool
-	// DisableDiscovery 禁用服务发现功能
+	// DisableDiscovery prevents creation of the naming client; both capabilities cannot be disabled.
 	DisableDiscovery bool
-
-	// InitConfigSettings 需要立即初始化的配置。
-	// 该设置将在config client创建完成后立即执行，优先级高于InitFunc。
-	// 适用于提前加载配置，确保InitFunc和后续starter可以直接读取初始化后的配置值。
+	// InitConfigSettings loads and optionally watches files before InitFunc on a best-effort basis.
 	InitConfigSettings *InitConfigSettings
-
-	// InitFunc Nacos启动完毕后执行的初始化函数。
-	// 执行顺序晚于InitConfigSettings，此时config client和naming client已经按配置完成初始化。
+	// InitFunc runs synchronously after initial loading; disabled SDK clients are nil.
+	// It cannot return an error; callers must arrange startup-critical readiness themselves.
 	InitFunc func(config config_client.IConfigClient, naming naming_client.INamingClient)
 }
-
