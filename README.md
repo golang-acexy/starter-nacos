@@ -37,7 +37,9 @@ loader := parent.InitStarterLoader([]parent.Starter{
     },
 })
 
-err := loader.Start()
+if err := loader.Start(); err != nil {
+    return err
+}
 ```
 
 ## Configuration Client
@@ -50,7 +52,9 @@ Supported operations:
 - `GetConfig(dataId, type, value)` reads and deserializes JSON or YAML.
 - `WatchConfig(dataId, callback)` subscribes to config changes.
 - `UnwatchConfig(watchId)` cancels a config subscription.
-- `LoadAndWatchConfig(settings)` loads multiple config files and optionally watches them in best-effort mode.
+- `LoadAndWatchConfig(settings)` loads multiple config files and optionally watches them in best-effort mode. Failures do not abort startup; use error-returning APIs when configuration is required for startup.
+
+Pass nonnil destination pointers and callbacks. Synchronize reads of dynamically updated values; automatic writes are serialized within one `LoadAndWatchConfig` call, but separate calls and external readers require your own coordination. JSON decoding can partially change the target on error; failed YAML decoding leaves it unchanged.
 
 ## Service Discovery Client
 
@@ -62,7 +66,9 @@ Supported operations:
 - `RegisterBatch(serviceName, instances)` registers multiple ephemeral instances.
 - `Unregister(instanceId)` removes a previously registered instance.
 - `GetService`, `GetServicePage`, `GetAllInstances`, `GetHealthyInstances`, and `ChooseOneHealthyInstance` query service metadata and instances.
-- `WatchNaming(serviceName, callback)` and `UnwatchNaming(watchId)` manage service instance subscriptions.
+- `WatchNaming(serviceName, callback)` and `UnwatchNaming(watchId)` manage service instance subscriptions. Provide a nonnil callback and synchronize any shared state it accesses.
+
+When `UpdateCacheWhenEmpty` is false, empty-instance updates are suppressed. If subscription and cleanup both fail, `WatchNaming` returns an error and a retained watch ID; retry cleanup with `UnwatchNaming(id)`. Cancellation does not wait for already dispatched callbacks.
 
 Instance identifiers are generated from `group`, `serviceName`, `ip`, and `port`, so the same address can be registered under different services without local ID conflicts.
 
@@ -74,22 +80,22 @@ Instance identifiers are generated from `group`, `serviceName`, `ip`, and `port`
 
 ## Lifecycle Notes
 
-This starter is process-singleton by design. `Start` atomically publishes one immutable runtime snapshot containing the config client, naming client, namespace, and managed wrappers. `Stop` first removes that snapshot, then unregisters naming instances and closes the SDK clients through its local snapshot.
+This starter is process-singleton by design. Start it before requesting group clients. `Start` returns `nil, nil` on success; obtain clients through the accessor APIs. `LazyConfig` takes precedence over `Config`, and the resolved settings are cached. Startup normalizes the shared SDK namespace value `public` to an empty string.
 
-Old `ConfigClient` and `NamingClient` wrappers should not be reused after `Stop`; methods will return disabled-client errors once the raw clients are cleared.
+Finish client operations before `Stop` and do not reuse old group wrappers after shutdown. A shutdown timeout reports `stopped=true`, but resource cleanup continues in the background. Individual deregistration failures are logged. Raw SDK clients are owned and closed by the starter.
 
 The standard Nacos starter does not allow parent-managed restart after successful shutdown.
 
 ## Testing
 
-Default tests are deterministic package-level unit tests and do not require Nacos:
+Package-level unit and regression tests do not require Nacos:
 
 ```bash
-go test ./...
+go test -race ./nacosstarter
 ```
 
-Tests under `test/` are integration-oriented, use the `integration` build tag, and expect a local Nacos server. Some tests block for manual observation, so run them selectively:
+Tests under `test/` expect an explicitly configured Nacos server and currently have no integration build tag. Some block for manual observation, so avoid `go test ./...` for routine validation and run integration tests selectively:
 
 ```bash
-go test -tags=integration ./test -run TestName
+go test ./test -run '^TestName$' -timeout=30s
 ```

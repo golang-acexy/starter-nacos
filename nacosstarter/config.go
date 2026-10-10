@@ -2,25 +2,27 @@ package nacosstarter
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/acexy/golang-toolkit/crypto/hashing"
 	"github.com/acexy/golang-toolkit/logger"
 	"github.com/nacos-group/nacos-sdk-go/v2/vo"
 )
 
-// Config
-
+// ConfigType selects the configuration decoder.
 type ConfigType string
 
-// ConfigChangeData 文件变动监听回调
+// ConfigChangeData receives asynchronous configuration updates; callers must synchronize shared state.
 type ConfigChangeData func(namespace, group, dataId, data string)
 
 const (
+	// ConfigTypeJson selects JSON decoding.
 	ConfigTypeJson ConfigType = "json"
+	// ConfigTypeYaml selects YAML decoding.
 	ConfigTypeYaml ConfigType = "yaml"
 )
 
-// GetConfigRawContent 获取指定配置的源文件内容
+// GetConfigRawContent reads a data ID in this group; the configuration capability must be running.
 func (c *ConfigClient) GetConfigRawContent(dataId string) (string, error) {
 	client, err := currentConfigInstance()
 	if err != nil {
@@ -29,7 +31,8 @@ func (c *ConfigClient) GetConfigRawContent(dataId string) (string, error) {
 	return client.GetConfig(vo.ConfigParam{DataId: dataId, Group: c.group})
 }
 
-// GetConfig 获取指定文件内容并反序列化
+// GetConfig reads and decodes into a nonnil pointer. Callers must synchronize access to the target.
+// Failed YAML decoding leaves the target unchanged; JSON may partially update it on error.
 func (c *ConfigClient) GetConfig(dataId string, configType ConfigType, value any) error {
 	raw, err := c.GetConfigRawContent(dataId)
 	if err != nil {
@@ -38,7 +41,8 @@ func (c *ConfigClient) GetConfig(dataId string, configType ConfigType, value any
 	return deserializeConfig(raw, configType, value)
 }
 
-// WatchConfig 监听文件变化
+// WatchConfig subscribes once per data ID in this group and returns a local watch ID.
+// The callback must be nonnil and safe for concurrent asynchronous invocation.
 func (c *ConfigClient) WatchConfig(dataId string, watch func(namespace, group, dataId, data string)) (string, error) {
 	client, err := currentConfigInstance()
 	if err != nil {
@@ -69,7 +73,8 @@ func (c *ConfigClient) WatchConfig(dataId string, watch func(namespace, group, d
 	return watchId, err
 }
 
-// UnwatchConfig 取消监听文件变化
+// UnwatchConfig cancels a tracked subscription; failed cancellation retains its ID for retry.
+// Already dispatched callbacks may still run after cancellation.
 func (c *ConfigClient) UnwatchConfig(watchId string) error {
 	client, err := currentConfigInstance()
 	if err != nil {
@@ -93,23 +98,29 @@ func (c *ConfigClient) UnwatchConfig(watchId string) error {
 	return err
 }
 
-// LoadAndWatchConfig 获取并监听配置变化。该方法是best-effort模式：加载或监听失败仅记录日志，
-// 不会中断其余文件的处理，调用方无法直接感知个别文件的失败。
+// LoadAndWatchConfig loads and optionally watches nonnil settings on a best-effort basis.
+// Failures are logged without configuration contents and do not stop subsequent files.
+// Target writes are serialized within this call; readers and other calls require caller synchronization.
 func (c *ConfigClient) LoadAndWatchConfig(configFiles []*ConfigFileSetting) {
 	if len(configFiles) == 0 {
 		logger.Logrus().Warningln("empty config file")
 		return
 	}
+	var updateMu sync.Mutex
 	for _, f := range configFiles {
+		updateMu.Lock()
 		err := c.GetConfig(f.DataId, f.Type, f.Value)
+		updateMu.Unlock()
 		if err != nil {
-			logger.Logrus().Errorln("cant load config file:", f.DataId, err)
+			logger.Logrus().Errorln("cant load config file:", f.DataId)
 		}
 		if f.Watch {
 			_, err = c.WatchConfig(f.DataId, func(namespace, group, dataId, data string) {
-				err = deserializeConfig(data, f.Type, f.Value)
-				if err != nil {
-					logger.Logrus().WithError(err).Error("cant deserialize content:", data)
+				updateMu.Lock()
+				defer updateMu.Unlock()
+				if decodeErr := deserializeConfig(data, f.Type, f.Value); decodeErr != nil {
+					// Decoder errors can contain configuration values; log only the identity.
+					logger.Logrus().WithField("dataId", dataId).WithField("group", group).Error("cant deserialize config")
 				}
 			})
 			if err != nil {
