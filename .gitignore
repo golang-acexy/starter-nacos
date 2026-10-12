@@ -25,3 +25,6 @@ go.work
 *.log
 test/config
 test/naming
+
+# Local link to workspace internal documentation
+/docs
