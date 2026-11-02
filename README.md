@@ -82,7 +82,9 @@ Instance identifiers are generated from `group`, `serviceName`, `ip`, and `port`
 
 This starter is process-singleton by design. Start it before requesting group clients. `Start` returns `nil, nil` on success; obtain clients through the accessor APIs. `LazyConfig` takes precedence over `Config`, and the resolved settings are cached. Startup normalizes the shared SDK namespace value `public` to an empty string.
 
-Finish client operations before `Stop` and do not reuse old group wrappers after shutdown. A shutdown timeout reports `stopped=true`, but resource cleanup continues in the background. Individual deregistration failures are logged. Raw SDK clients are owned and closed by the starter.
+Finish client operations before `Stop` and do not reuse old group wrappers after shutdown. A shutdown timeout reports `stopped=true`, but resource cleanup continues in the background. Stop cancels managed configuration and naming subscriptions, deregisters tracked instances, and clears local records. Individual cleanup failures are logged and do not prevent client closure. Already dispatched callbacks may still finish afterward. Raw SDK clients are owned and closed by the starter; subscriptions created directly through them must be canceled by their owners.
+
+Nacos SDK v2.3.5 can retain an idle UDP receiver after client closure. Managed subscription cleanup releases their callback references, but does not eliminate this SDK socket/goroutine leak. Avoid repeated manual client recreation as a cleanup strategy.
 
 The standard Nacos starter does not allow parent-managed restart after successful shutdown.
 

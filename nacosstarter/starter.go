@@ -237,8 +237,8 @@ func (n *NacosStarter) Start() (any, error) {
 	return nil, nil
 }
 
-// Stop withdraws the clients, deregisters tracked instances, and closes SDK resources.
-// Timeout reports stopped=true while cleanup continues; deregistration errors are only logged.
+// Stop withdraws the clients, cancels managed watches, deregisters instances, and closes SDK clients.
+// Timeout reports stopped=true while cleanup continues; subscription and deregistration errors are only logged.
 // Callers must stop client operations before shutdown; retained wrappers must not be reused.
 func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool, err error) {
 	nacosLifecycleLock.Lock()
@@ -259,6 +259,7 @@ func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool
 			nacosState = nacosStopped
 			nacosLifecycleLock.Unlock()
 		}()
+		cancelManagedWatches(runtime)
 		if runtime.naming != nil {
 			for _, managedNamingClient := range snapshotNamingClients(runtime.manager) {
 				for id, instance := range managedNamingClient.snapshotRegistered() {
@@ -281,6 +282,9 @@ func (n *NacosStarter) Stop(maxWaitTime time.Duration) (gracefully, stopped bool
 						logger.Logrus().Traceln("unregister instance ip:", instance.Ip, "port:", instance.Port, "result:", flag)
 					}
 				}
+				managedNamingClient.mu.Lock()
+				clear(managedNamingClient.registered)
+				managedNamingClient.mu.Unlock()
 			}
 			runtime.naming.CloseClient()
 		}
